@@ -1,0 +1,7 @@
+node_modules
+dist
+.content-cache
+.venv
+*.log
+test-results
+*.tsbuildinfo
