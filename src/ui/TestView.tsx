@@ -4,7 +4,7 @@ import { drillWords } from '../analysis/drills';
 import { generateWords, pickQuote, splitText } from '../content/generator';
 import type { Settings } from '../data/settings';
 import { keydownAction, shouldPreventKeydown, textActions, type Action } from '../engine/input';
-import { computeResult, wpmChars } from '../engine/metrics';
+import { computeResult, isTyping, missedSpaceWords, wpmChars } from '../engine/metrics';
 import { TypingSession } from '../engine/session';
 import { dateKey } from '../streak/streak';
 import type { ModeSpec, QuoteLength, SessionRecord } from '../types';
@@ -128,7 +128,7 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
       source,
     };
     setResult(rec);
-    const typedKeys = session.ks.filter((k) => k[3] <= 1).length;
+    const typedKeys = session.ks.filter(isTyping).length;
     if (durationMs >= 2000 && typedKeys >= 5) onSaved(rec);
   }, [onSaved]);
 
@@ -243,7 +243,7 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
   }
 
   const liveWpm =
-    elapsed > 1000 ? Math.round((wpmChars(session.words, session.typed, true) / 5) * (60000 / elapsed)) : 0;
+    elapsed > 1000 ? Math.round((wpmChars(session.words, session.typed, true, missedSpaceWords(session.ks)) / 5) * (60000 / elapsed)) : 0;
   const progress =
     mode.kind === 'time' && !drill
       ? String(Math.max(0, Math.ceil((mode.seconds * 1000 - elapsed) / 1000)))

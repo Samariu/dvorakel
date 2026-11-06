@@ -1,5 +1,5 @@
 import { keystrokeCorrect } from '../engine/metrics';
-import { K_CHAR, K_SPACE, type Keystroke } from '../types';
+import { K_CHAR, K_MISSED_SPACE, K_SPACE, type Keystroke } from '../types';
 
 /** One observation of a char / n-gram / word. `ms` only when timing is clean. */
 export interface Sample {
@@ -40,7 +40,17 @@ export function extract(words: string[], typed: string[], ks: Keystroke[]): Extr
     j >= 0 && ks[j][3] === K_CHAR && ks[j][1] === w && ks[j][2] === c && ok[j];
 
   for (let i = 0; i < ks.length; i++) {
-    const [t, w, c, kind] = ks[i];
+    const [t, w, c, kind, ch] = ks[i];
+    if (kind === K_MISSED_SPACE) {
+      // The letter typed instead of the space is the first attempt at the next word.
+      const next = words[w + 1];
+      const pos = `${w + 1}:0`;
+      if (next && !visited.has(pos)) {
+        visited.add(pos);
+        out.chars.push({ key: next[0], ms: undefined, err: ch !== next[0] });
+      }
+      continue;
+    }
     const target = words[w] ?? '';
     if ((kind !== K_CHAR && kind !== K_SPACE) || c >= target.length) continue;
     const pos = `${w}:${c}`;

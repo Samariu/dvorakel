@@ -1,10 +1,11 @@
-import { K_CHAR, K_SPACE, type CharCounts, type Keystroke, type SessionResult } from '../types';
+import { K_CHAR, K_MISSED_SPACE, K_SPACE, type CharCounts, type Keystroke, type SessionResult } from '../types';
 
 /** Whether a keystroke typed the expected character at its position. */
 export function keystrokeCorrect(k: Keystroke, words: string[]): boolean {
   const [, w, c, kind, ch] = k;
   const target = words[w] ?? '';
   if (kind === K_SPACE) return c === target.length;
+  // K_MISSED_SPACE is always wrong: a letter where the space should be.
   if (kind === K_CHAR) return c < target.length && target[c] === ch;
   return false;
 }
@@ -26,13 +27,23 @@ export function countChars(words: string[], typed: string[], finishedByTime: boo
   return r;
 }
 
-/** Characters that count for net WPM: fully correct words plus their spaces. */
-export function wpmChars(words: string[], typed: string[], finishedByTime: boolean): number {
+export const isTyping = (k: Keystroke) => k[3] === K_CHAR || k[3] === K_SPACE || k[3] === K_MISSED_SPACE;
+
+/** Words whose space was replaced by a letter (no-backspace mode). */
+export function missedSpaceWords(ks: Keystroke[]): Set<number> {
+  return new Set(ks.filter((k) => k[3] === K_MISSED_SPACE).map((k) => k[1]));
+}
+
+/**
+ * Characters that count for net WPM: fully correct words plus their spaces.
+ * A space that was replaced by a letter is not credited.
+ */
+export function wpmChars(words: string[], typed: string[], finishedByTime: boolean, missedSpace = new Set<number>()): number {
   let n = 0;
   const last = typed.length - 1;
   typed.forEach((s, i) => {
     const w = words[i] ?? '';
-    if (s === w) n += w.length + (i < last ? 1 : 0);
+    if (s === w) n += w.length + (i < last && !missedSpace.has(i) ? 1 : 0);
     else if (i === last && finishedByTime && w.startsWith(s)) n += s.length;
   });
   return n;
@@ -47,9 +58,11 @@ export function computeResult(
   durationMs: number,
   finishedByTime: boolean,
 ): SessionResult {
-  const typing = ks.filter((k) => k[3] === K_CHAR || k[3] === K_SPACE);
+  const typing = ks.filter(isTyping);
   const correctKs = typing.filter((k) => keystrokeCorrect(k, words)).length;
-  const seconds = Math.max(1, Math.ceil(durationMs / 1000));
+  // Round instead of ceil, so the last bucket is 0.5–1.5 s long. A bucket of a
+  // few milliseconds would otherwise be extrapolated to a huge raw speed.
+  const seconds = Math.max(1, Math.round(durationMs / 1000));
   const rawSeries = new Array<number>(seconds).fill(0);
   const errSeries = new Array<number>(seconds).fill(0);
   const correctPerSec = new Array<number>(seconds).fill(0);
@@ -63,15 +76,16 @@ export function computeResult(
   let cum = 0;
   for (let i = 0; i < seconds; i++) {
     cum += correctPerSec[i];
-    const ms = Math.min(durationMs, (i + 1) * 1000);
+    const ms = i === seconds - 1 ? durationMs : (i + 1) * 1000;
     wpmSeries.push(round1(perMinute(cum, ms)));
   }
-  // The last bucket may be partial: scale it to a full second.
+  // The last bucket is 0.5–1.5 s long: scale it to one second.
   const lastLen = durationMs - (seconds - 1) * 1000;
-  const rawPerSec = rawSeries.map((n, i) => n * 12 * (i === seconds - 1 && lastLen > 0 ? 1000 / lastLen : 1));
+  const lastScale = seconds > 1 && lastLen > 0 ? 1000 / lastLen : durationMs > 0 ? 1000 / durationMs : 1;
+  const rawPerSec = rawSeries.map((n, i) => n * 12 * (i === seconds - 1 ? lastScale : 1));
   const full = seconds > 2 ? rawPerSec.slice(0, -1) : rawPerSec;
   return {
-    wpm: round1(perMinute(wpmChars(words, typed, finishedByTime), durationMs)),
+    wpm: round1(perMinute(wpmChars(words, typed, finishedByTime, missedSpaceWords(ks)), durationMs)),
     raw: round1(perMinute(typing.length, durationMs)),
     acc: typing.length ? round1((100 * correctKs) / typing.length) : 0,
     consistency: round1(consistency(full)),

@@ -121,3 +121,15 @@ describe('weightedMedian', () => {
     expect(weightedMedian([])).toBe(0);
   });
 });
+
+describe('missed space (no-backspace mode)', () => {
+  it('counts the letter as the first attempt at the next word', () => {
+    const s = new TypingSession(['the', 'cat'], { noBackspace: true });
+    let t = 1000;
+    for (const ch of 'thecat') s.typeChar(ch, (t += 150));
+    const ex = extract(s.words, s.typed, s.ks);
+    expect(ex.chars.map((c) => c.key).join('')).toBe('thecat');
+    expect(ex.chars[3]).toEqual({ key: 'c', ms: undefined, err: false });
+    expect(ex.words.find((w) => w.key === 'the')?.err).toBe(true);
+  });
+});

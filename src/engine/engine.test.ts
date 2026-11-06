@@ -128,3 +128,49 @@ describe('input mapping (Windows AltGr = Ctrl+Alt)', () => {
     expect(keydownAction({ key: 'Escape', ctrlKey: false, altKey: false, metaKey: false }).type).toBe('restart');
   });
 });
+
+describe('no-backspace mode', () => {
+  it('turns a letter typed instead of a space into one error and moves on', () => {
+    const s = new TypingSession(['the', 'cat'], { noBackspace: true });
+    typeAll(s, 'thecat');
+    expect(s.typed).toEqual(['the', 'cat']);
+    expect(s.finished).toBe(true);
+    const r = computeResult(s.words, s.typed, s.ks, s.elapsedMs(0), false);
+    expect(r.acc).toBeCloseTo((100 * 5) / 6, 1);
+    expect(r.chars).toEqual({ correct: 6, incorrect: 0, extra: 0, missed: 0 });
+    // The missing space is not credited: 6 chars in 500 ms.
+    expect(r.wpm).toBeCloseTo((6 / 5) * (60000 / 500), 1);
+  });
+
+  it('ends on the last word once it is complete, even with a mistake', () => {
+    const s = new TypingSession(['ist', 'herum.'], { noBackspace: true });
+    typeAll(s, 'ist herum,');
+    expect(s.finished).toBe(true);
+  });
+
+  it('normal mode still waits for a correct last word (or a space)', () => {
+    const s = new TypingSession(['ist', 'herum.']);
+    typeAll(s, 'ist herum,');
+    expect(s.finished).toBe(false);
+    s.typeChar(' ', 99999);
+    expect(s.finished).toBe(true);
+  });
+
+  it('keeps normal-mode extra letters at the end of a word', () => {
+    const s = new TypingSession(['ab', 'cd']);
+    typeAll(s, 'abx');
+    expect(s.typed).toEqual(['abx']);
+  });
+});
+
+describe('raw speed per second', () => {
+  it('does not extrapolate a tiny final bucket into a spike', () => {
+    // 10 keys/s for 3 s (= 120 raw), last key 50 ms into the 4th second.
+    const s = new TypingSession(['x'.repeat(40)]);
+    for (let i = 0; i <= 30; i++) s.typeChar('x', i * 100 + (i === 30 ? 50 : 0));
+    const r = computeResult(s.words, s.typed, s.ks, 3050, true);
+    expect(r.rawSeries).toHaveLength(3);
+    expect(Math.max(...r.rawSeries)).toBeLessThan(150);
+    expect(r.wpmSeries).toHaveLength(3);
+  });
+});
