@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import type { ActiveDrill } from '../App';
 import { wordCore } from '../analysis/extract';
+import { isTyping } from '../engine/metrics';
+import { K_CHAR, K_MISSED_SPACE } from '../types';
 import type { SessionRecord } from '../types';
 import { LineChart } from './charts';
 import { fmtDuration, modeLabel, pbKey } from './format';
@@ -14,7 +16,7 @@ interface Props {
 }
 
 export function ResultsView({ result: r, sessions, drill, onNext, onExitDrill }: Props) {
-  const saved = r.durationMs >= 2000 && r.ks.filter((k) => k[3] <= 1).length >= 5;
+  const saved = r.durationMs >= 2000 && r.ks.filter(isTyping).length >= 5;
   const previousBest = useMemo(() => {
     if (r.mode.kind === 'drill') return null;
     const key = pbKey(r);
@@ -36,7 +38,8 @@ export function ResultsView({ result: r, sessions, drill, onNext, onExitDrill }:
     for (const k of r.ks) {
       const [, wi, ci, kind, ch] = k;
       const w = r.words[wi];
-      if (kind === 0 && w !== undefined && (ci >= w.length || w[ci] !== ch)) {
+      const wrongChar = kind === K_CHAR && w !== undefined && (ci >= w.length || w[ci] !== ch);
+      if (w !== undefined && (wrongChar || kind === K_MISSED_SPACE)) {
         const key = wordCore(w) || w;
         if (!out.has(key)) out.set(key, 1);
       }

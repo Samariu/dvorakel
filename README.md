@@ -14,7 +14,8 @@ Dvorak variant, including custom layouts with ä/ö/ü/ß on an AltGr layer.
 - **Tests**: time (15/30/60/120 s), word count (10/25/50/100), quotes (public-domain literature plus everyday
   sentences), and your own pasted text. Optional punctuation and numbers.
 - **Error handling**: Monkeytype-style by default (errors shown in red, backspace allowed, Ctrl+Backspace deletes a
-  word). There is also a *no-backspace* mode where mistakes can't be corrected.
+  word). There is also a *no-backspace* mode where mistakes can't be corrected. In that mode a letter typed where the
+  space belongs counts as one error and starts the next word, and the test ends as soon as the last word is complete.
 - **EN / DE toggle** in the header. German is strict: only `ä ö ü ß` count, `ae/oe/ue/ss` are errors. German nouns
   keep their capital letters.
 - **Practice tab**: your weakest letter pairs, triples, characters and words, ranked by how much slower they are than
@@ -24,8 +25,11 @@ Dvorak variant, including custom layouts with ä/ö/ü/ß on an AltGr layer.
   bests per mode, a practice calendar and the full session history (each session can be deleted).
 - **Streak** (can be turned off): a daily goal in minutes or tests. Every 7 goal days in a row earns a freeze (max 2),
   which is used automatically when you miss a day. Changing the goal only applies from that day on.
-- **Your data stays in your browser** (IndexedDB). Settings has export/import to JSON for backups or moving to another
-  machine.
+- **Your data stays in your browser** (IndexedDB). Nothing is sent anywhere, and every person or browser that opens
+  the app has their own separate history. Data is stored per address: `localhost:5173`, `localhost:4173` and the
+  GitHub Pages URL each have their own. Settings has export/import to JSON for backups or moving to another machine.
+- **Works offline**: after you have opened the Pages site once while online, the same link also loads without a
+  connection (a small service worker caches the app). Online you always get the latest version.
 
 Keys: <kbd>Tab</kbd> / <kbd>Esc</kbd> restart, <kbd>Tab</kbd> / <kbd>Enter</kbd> on the results screen starts the next
 test.

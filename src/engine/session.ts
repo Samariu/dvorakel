@@ -1,4 +1,4 @@
-import { K_BACK, K_CHAR, K_SPACE, K_WORD_BACK, type Keystroke } from '../types';
+import { K_BACK, K_CHAR, K_MISSED_SPACE, K_SPACE, K_WORD_BACK, type Keystroke } from '../types';
 
 export interface SessionOptions {
   noBackspace?: boolean;
@@ -71,12 +71,25 @@ export class TypingSession {
       this.maybeExtend();
       return;
     }
+    const isLast = w === this.words.length - 1;
+    if (this.noBackspace && !isLast && cur.length >= this.words[w].length) {
+      // Mistakes can't be fixed, so a letter instead of the space moves on:
+      // one error, and the letter starts the next word.
+      this.start(t);
+      this.record(t, w, cur.length, K_MISSED_SPACE, ch);
+      this.wordIndex++;
+      this.typed.push(ch);
+      this.maybeExtend();
+      return;
+    }
     if (cur.length >= this.words[w].length + MAX_EXTRA) return;
     this.start(t);
     this.record(t, w, cur.length, K_CHAR, ch);
     this.typed[w] = cur + ch;
-    // Word / quote mode: the test ends as soon as the last word is correct.
-    if (w === this.words.length - 1 && this.typed[w] === this.words[w] && !this.opts.timeLimitMs) {
+    // Word / quote mode: the test ends as soon as the last word is correct,
+    // or (no-backspace mode, where it can't be fixed) as soon as it is complete.
+    const done = this.typed[w] === this.words[w] || (this.noBackspace && this.typed[w].length >= this.words[w].length);
+    if (isLast && done && !this.opts.timeLimitMs) {
       this.endT = t;
     }
   }

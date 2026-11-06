@@ -16,6 +16,12 @@ export const K_CHAR = 0;
 export const K_SPACE = 1;
 export const K_BACK = 2;
 export const K_WORD_BACK = 3;
+/**
+ * No-backspace mode: a letter typed where the space belonged. Counts as one
+ * wrong keystroke at the end of word `w`; the letter becomes the first
+ * character of word `w + 1`.
+ */
+export const K_MISSED_SPACE = 4;
 
 /**
  * One keystroke: [ms since test start, word index, char index (position in the
