@@ -133,6 +133,9 @@ export function StatsView({ settings, sessions, streak, onChanged }: Props) {
           <LineChart
             ariaLabel="Accuracy per session"
             height={180}
+            // Accuracy lives near the top; start at 80% so differences are visible,
+            // but extend downward if a session dips below that so it isn't clipped.
+            yMin={Math.min(80, ...filtered.map((s) => s.acc))}
             yMax={100}
             xLabels={filtered.map((s) => `${fmtDate(s.startedAt)} · ${modeLabel(s.mode)}`)}
             series={[{ name: 'accuracy', color: 'var(--series-1)', values: filtered.map((s) => s.acc), format: (v) => `${v}%` }]}
