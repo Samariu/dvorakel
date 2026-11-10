@@ -40,6 +40,7 @@ export function StatsView({ settings, sessions, streak, onChanged }: Props) {
   );
 
   const wpms = filtered.map((s) => s.wpm);
+  const accs = filtered.map((s) => s.acc);
   const last10 = filtered.slice(-10);
   const prev10 = filtered.slice(-20, -10);
   const avg10 = mean(last10.map((s) => s.wpm));
@@ -122,6 +123,7 @@ export function StatsView({ settings, sessions, streak, onChanged }: Props) {
           series={[
             { name: 'wpm', color: 'var(--series-1)', values: wpms, format: (v) => String(Math.round(v)) },
             { name: 'average of 10', color: 'var(--series-2)', values: rolling(wpms, 10), format: (v) => String(Math.round(v)) },
+            { name: 'average of 100', color: 'var(--text-2)', dotted: true, values: rolling(wpms, 100), format: (v) => String(Math.round(v)) },
           ]}
         />
       </div>
@@ -135,10 +137,13 @@ export function StatsView({ settings, sessions, streak, onChanged }: Props) {
             height={180}
             // Accuracy lives near the top; start at 80% so differences are visible,
             // but extend downward if a session dips below that so it isn't clipped.
-            yMin={Math.min(80, ...filtered.map((s) => s.acc))}
+            yMin={Math.min(80, ...accs)}
             yMax={100}
             xLabels={filtered.map((s) => `${fmtDate(s.startedAt)} · ${modeLabel(s.mode)}`)}
-            series={[{ name: 'accuracy', color: 'var(--series-1)', values: filtered.map((s) => s.acc), format: (v) => `${v}%` }]}
+            series={[
+              { name: 'accuracy', color: 'var(--series-1)', values: accs, format: (v) => `${v}%` },
+              { name: 'average of 100', color: 'var(--text-2)', dotted: true, values: rolling(accs, 100), format: (v) => `${v}%` },
+            ]}
           />
         </div>
         <div className="card">

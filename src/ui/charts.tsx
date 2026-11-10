@@ -6,6 +6,8 @@ export interface Series {
   values: (number | null)[];
   /** Render as dots only (e.g. error markers). */
   dots?: boolean;
+  /** Draw the line dotted instead of solid. */
+  dotted?: boolean;
   format?: (v: number) => string;
 }
 
@@ -119,7 +121,7 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
         <div className="legend">
           {series.map((s) => (
             <span key={s.name}>
-              <i className={s.dots ? 'dot' : ''} style={{ background: s.color }} />
+              <i className={s.dots ? 'dot' : ''} style={swatchStyle(s)} />
               {s.name}
             </span>
           ))}
@@ -179,7 +181,16 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
               )}
             </g>
           ) : (
-            <path key={s.name} d={path(s.values)} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            <path
+              key={s.name}
+              d={path(s.values)}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={2}
+              strokeDasharray={s.dotted ? '0 5' : undefined}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
           ),
         )}
         {series.map((s) => {
@@ -210,7 +221,7 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
             if (v === null || v === undefined) return null;
             return (
               <div className="row" key={s.name}>
-                <span className="key-line" style={{ background: s.color }} />
+                <span className="key-line" style={swatchStyle(s)} />
                 <span className="v">{s.format ? s.format(v) : v}</span>
                 <span className="n">{s.name}</span>
               </div>
@@ -220,6 +231,11 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
       )}
     </div>
   );
+}
+
+/** Legend/tooltip swatch: a short line, dotted when the series is dotted. */
+function swatchStyle(s: Series): React.CSSProperties {
+  return s.dotted ? { background: 'none', height: 0, borderTop: `2px dotted ${s.color}` } : { background: s.color };
 }
 
 export interface CalendarDay {
