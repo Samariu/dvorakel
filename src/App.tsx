@@ -138,7 +138,7 @@ export function App() {
           />
         )}
         {tab === 'practice' && <PracticeView settings={settings} update={update} sessions={sessions} onStart={startDrill} />}
-        {tab === 'stats' && <StatsView settings={settings} sessions={sessions ?? []} streak={streak} onChanged={reload} />}
+        {tab === 'stats' && <StatsView settings={settings} update={update} sessions={sessions ?? []} streak={streak} onChanged={reload} />}
         {tab === 'settings' && <SettingsView settings={settings} update={update} onDataChanged={reload} />}
       </main>
 

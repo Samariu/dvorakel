@@ -18,6 +18,19 @@ export interface Settings {
   goals: Goal[];
   /** WPM targets drawn on charts. */
   targets: number[];
+  /** Which layers the stats charts show. */
+  statsLayers: StatsLayers;
+}
+
+export interface ChartLayers {
+  sessions: boolean;
+  avg10: boolean;
+  avg100: boolean;
+}
+
+export interface StatsLayers {
+  speed: ChartLayers & { targets: boolean };
+  accuracy: ChartLayers;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -34,6 +47,10 @@ export const DEFAULT_SETTINGS: Settings = {
   streakEnabled: true,
   goals: [{ from: '2000-01-01', type: 'minutes', value: 10 }],
   targets: [60, 100],
+  statsLayers: {
+    speed: { sessions: true, avg10: true, avg100: true, targets: true },
+    accuracy: { sessions: true, avg10: true, avg100: true },
+  },
 };
 
 const KEY = 'dvorakel.settings';
@@ -41,7 +58,16 @@ const KEY = 'dvorakel.settings';
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<Settings>;
+      const d = DEFAULT_SETTINGS.statsLayers;
+      // Merge nested layer flags so keys added later get their defaults.
+      const statsLayers = {
+        speed: { ...d.speed, ...saved.statsLayers?.speed },
+        accuracy: { ...d.accuracy, ...saved.statsLayers?.accuracy },
+      };
+      return { ...DEFAULT_SETTINGS, ...saved, statsLayers };
+    }
   } catch {
     // Storage unavailable or corrupt: fall back to defaults.
   }

@@ -1,14 +1,15 @@
 import { useMemo, useState } from 'react';
 import { activityByDay } from '../App';
 import { deleteSession } from '../data/db';
-import type { Settings } from '../data/settings';
+import type { ChartLayers, Settings, StatsLayers } from '../data/settings';
 import { addDays, dateKey, type StreakState } from '../streak/streak';
 import type { SessionRecord } from '../types';
-import { Calendar, LineChart, type CalendarDay } from './charts';
+import { Calendar, LineChart, type CalendarDay, type Series } from './charts';
 import { fmtDate, fmtDuration, modeKey, modeLabel } from './format';
 
 interface Props {
   settings: Settings;
+  update: (p: Partial<Settings>) => void;
   sessions: SessionRecord[];
   streak: StreakState;
   onChanged: () => void;
@@ -23,9 +24,33 @@ function rolling(values: number[], n: number): (number | null)[] {
   return values.map((_, i) => (i + 1 < Math.min(n, 3) ? null : Math.round(mean(values.slice(Math.max(0, i - n + 1), i + 1)) * 10) / 10));
 }
 
+const LAYER_BY_NAME: Record<string, keyof ChartLayers> = { 'average of 10': 'avg10', 'average of 100': 'avg100' };
+
+/** Shade of `base` mixed toward the card background; level 0 is full colour. */
+function fade(base: string, level: number): string {
+  const pct = [100, 45, 25][level];
+  return pct === 100 ? base : `color-mix(in srgb, ${base} ${pct}%, var(--surface))`;
+}
+
+/**
+ * Sessions as dots plus running averages as lines, all in one hue. As on
+ * Monkeytype, the most aggregated visible layer gets the full colour and each
+ * finer layer is drawn paler, so the long-term trend stays on top visually.
+ */
+function layeredSeries(name: string, values: number[], l: ChartLayers, format: (v: number) => string): Series[] {
+  const base = 'var(--series-1)';
+  const avg10Level = l.avg100 ? 1 : 0;
+  const dotLevel = (l.avg100 ? 1 : 0) + (l.avg10 ? 1 : 0);
+  return [
+    { name, color: fade(base, dotLevel), values, dots: true, dotRadius: 3, hidden: !l.sessions, format },
+    { name: 'average of 10', color: fade(base, avg10Level), values: rolling(values, 10), hidden: !l.avg10, format },
+    { name: 'average of 100', color: base, values: rolling(values, 100), hidden: !l.avg100, format },
+  ];
+}
+
 const PB_MODES = ['time 15', 'time 30', 'time 60', 'time 120', 'words 10', 'words 25', 'words 50', 'words 100'];
 
-export function StatsView({ settings, sessions, streak, onChanged }: Props) {
+export function StatsView({ settings, update, sessions, streak, onChanged }: Props) {
   const [lang, setLang] = useState<LangFilter>('all');
   const [kind, setKind] = useState<KindFilter>('tests');
   const [showAll, setShowAll] = useState(false);
@@ -65,6 +90,15 @@ export function StatsView({ settings, sessions, streak, onChanged }: Props) {
   }, [sessions]);
 
   const history = [...filtered].reverse().slice(0, showAll ? undefined : 25);
+
+  const layers = settings.statsLayers;
+  const toggle =
+    <C extends keyof StatsLayers>(chart: C) =>
+    (name: string) => {
+      const key = (name === 'targets' ? 'targets' : LAYER_BY_NAME[name] ?? 'sessions') as keyof StatsLayers[C];
+      const cur = layers[chart];
+      update({ statsLayers: { ...layers, [chart]: { ...cur, [key]: !cur[key] } } });
+    };
 
   const remove = async (id?: number) => {
     if (id === undefined || !confirm('Delete this session from your history?')) return;
@@ -120,11 +154,9 @@ export function StatsView({ settings, sessions, streak, onChanged }: Props) {
             sameDay(filtered) ? `#${i + 1}` : new Date(filtered[i].startedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'numeric' })
           }
           refLines={settings.targets.map((t) => ({ value: t, label: `${t} wpm` }))}
-          series={[
-            { name: 'wpm', color: 'var(--series-1)', values: wpms, format: (v) => String(Math.round(v)) },
-            { name: 'average of 10', color: 'var(--series-2)', values: rolling(wpms, 10), format: (v) => String(Math.round(v)) },
-            { name: 'average of 100', color: 'var(--text-2)', dotted: true, values: rolling(wpms, 100), format: (v) => String(Math.round(v)) },
-          ]}
+          refLinesHidden={!layers.speed.targets}
+          onToggle={toggle('speed')}
+          series={layeredSeries('wpm', wpms, layers.speed, (v) => String(Math.round(v)))}
         />
       </div>
 
@@ -140,10 +172,8 @@ export function StatsView({ settings, sessions, streak, onChanged }: Props) {
             yMin={Math.min(80, ...accs)}
             yMax={100}
             xLabels={filtered.map((s) => `${fmtDate(s.startedAt)} · ${modeLabel(s.mode)}`)}
-            series={[
-              { name: 'accuracy', color: 'var(--series-1)', values: accs, format: (v) => `${v}%` },
-              { name: 'average of 100', color: 'var(--text-2)', dotted: true, values: rolling(accs, 100), format: (v) => `${v}%` },
-            ]}
+            onToggle={toggle('accuracy')}
+            series={layeredSeries('accuracy', accs, layers.accuracy, (v) => `${v}%`)}
           />
         </div>
         <div className="card">

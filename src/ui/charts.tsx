@@ -6,8 +6,10 @@ export interface Series {
   values: (number | null)[];
   /** Render as dots only (e.g. error markers). */
   dots?: boolean;
-  /** Draw the line dotted instead of solid. */
-  dotted?: boolean;
+  /** Plain dots of this radius, without the outline ring (for dense scatter). */
+  dotRadius?: number;
+  /** Kept in the legend (when toggleable) but not drawn. */
+  hidden?: boolean;
   format?: (v: number) => string;
 }
 
@@ -27,6 +29,10 @@ interface LineChartProps {
   yMin?: number;
   yMax?: number;
   ariaLabel: string;
+  /** Makes legend entries buttons that show/hide a series (by name) or the target lines ('targets'). */
+  onToggle?: (name: string) => void;
+  /** Target lines are listed in the legend but not drawn. */
+  refLinesHidden?: boolean;
 }
 
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
@@ -55,9 +61,23 @@ function niceTicks(min: number, max: number, count = 4): number[] {
 }
 
 const PAD = { l: 36, r: 12, t: 10, b: 24 };
+const NO_REF_LINES: RefLine[] = [];
 
-export function LineChart({ series, xLabels, xTicks, height = 220, refLines = [], yMin, yMax, ariaLabel }: LineChartProps) {
+export function LineChart({
+  series: allSeries,
+  xLabels,
+  xTicks,
+  height = 220,
+  refLines: allRefLines = [],
+  yMin,
+  yMax,
+  ariaLabel,
+  onToggle,
+  refLinesHidden = false,
+}: LineChartProps) {
   const [ref, width] = useWidth<HTMLDivElement>();
+  const series = useMemo(() => allSeries.filter((s) => !s.hidden), [allSeries]);
+  const refLines = refLinesHidden ? NO_REF_LINES : allRefLines;
   const [hover, setHover] = useState<number | null>(null);
   const n = xLabels.length;
 
@@ -117,19 +137,17 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
 
   return (
     <div className="chart" ref={ref}>
-      {series.length > 1 && (
+      {allSeries.length > 1 && (
         <div className="legend">
-          {series.map((s) => (
-            <span key={s.name}>
-              <i className={s.dots ? 'dot' : ''} style={swatchStyle(s)} />
-              {s.name}
-            </span>
+          {allSeries.map((s) => (
+            <LegendItem key={s.name} label={s.name} on={!s.hidden} onToggle={onToggle && (() => onToggle(s.name))}>
+              <i className={s.dots ? 'dot' : ''} style={{ background: s.color }} />
+            </LegendItem>
           ))}
-          {refLines.length > 0 && (
-            <span>
+          {allRefLines.length > 0 && (
+            <LegendItem label="targets" on={!refLinesHidden} onToggle={onToggle && (() => onToggle('targets'))}>
               <i style={{ background: 'var(--muted)', height: 1 }} />
-              targets
-            </span>
+            </LegendItem>
           )}
         </div>
       )}
@@ -175,7 +193,9 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
           s.dots ? (
             <g key={s.name}>
               {s.values.map((v, i) =>
-                v === null || v === 0 ? null : (
+                v === null ? null : s.dotRadius ? (
+                  <circle key={i} cx={x(i)} cy={y(v)} r={s.dotRadius} fill={s.color} />
+                ) : (
                   <circle key={i} cx={x(i)} cy={y(v)} r={4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />
                 ),
               )}
@@ -187,7 +207,6 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
               fill="none"
               stroke={s.color}
               strokeWidth={2}
-              strokeDasharray={s.dotted ? '0 5' : undefined}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
@@ -206,7 +225,7 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
             <line x1={x(hover)} x2={x(hover)} y1={PAD.t} y2={height - PAD.b} stroke="var(--muted)" strokeWidth={1} />
             {series.map((s) => {
               const v = s.values[hover];
-              return v === null || v === undefined || (s.dots && v === 0) ? null : (
+              return v === null || v === undefined ? null : (
                 <circle key={s.name} cx={x(hover)} cy={y(v)} r={4} fill={s.color} stroke="var(--surface)" strokeWidth={2} />
               );
             })}
@@ -221,7 +240,7 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
             if (v === null || v === undefined) return null;
             return (
               <div className="row" key={s.name}>
-                <span className="key-line" style={swatchStyle(s)} />
+                <span className="key-line" style={{ background: s.color }} />
                 <span className="v">{s.format ? s.format(v) : v}</span>
                 <span className="n">{s.name}</span>
               </div>
@@ -233,9 +252,21 @@ export function LineChart({ series, xLabels, xTicks, height = 220, refLines = []
   );
 }
 
-/** Legend/tooltip swatch: a short line, dotted when the series is dotted. */
-function swatchStyle(s: Series): React.CSSProperties {
-  return s.dotted ? { background: 'none', height: 0, borderTop: `2px dotted ${s.color}` } : { background: s.color };
+function LegendItem({ label, on, onToggle, children }: { label: string; on: boolean; onToggle?: () => void; children: React.ReactNode }) {
+  if (!onToggle) {
+    return (
+      <span>
+        {children}
+        {label}
+      </span>
+    );
+  }
+  return (
+    <button type="button" className={on ? '' : 'off'} aria-pressed={on} onClick={onToggle} title={on ? `Hide ${label}` : `Show ${label}`}>
+      {children}
+      {label}
+    </button>
+  );
 }
 
 export interface CalendarDay {
