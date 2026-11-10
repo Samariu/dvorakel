@@ -661,10 +661,26 @@ td.key {
   color: var(--text-2);
   margin-bottom: 8px;
 }
-.legend span {
+.legend span,
+.legend button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.legend button {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.legend button:hover {
+  color: var(--text);
+}
+.legend button.off {
+  opacity: 0.45;
+  text-decoration: line-through;
 }
 .legend i {
   display: inline-block;
