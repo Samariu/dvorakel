@@ -257,7 +257,7 @@ a {
   display: flex;
   gap: 24px;
   font-family: var(--font-mono);
-  font-size: 1.5rem;
+  font-size: calc(var(--type-size, 2rem) * 0.8);
   color: var(--accent);
   min-height: 2.25rem;
   font-variant-numeric: tabular-nums;
@@ -274,12 +274,14 @@ a {
   color: var(--accent);
 }
 .words-box {
-  --lh: 2.6rem;
+  /* Text size comes from the setting (--type-size on .app); line height follows it. */
+  --ts: var(--type-size, 2rem);
+  --lh: calc(var(--ts) * 1.6);
   position: relative;
   height: calc(var(--lh) * 3);
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 1.6rem;
+  font-size: var(--ts);
   line-height: var(--lh);
   cursor: text;
   user-select: none;
@@ -327,11 +329,18 @@ a {
 .caret {
   position: absolute;
   width: 2px;
-  height: 1.7rem;
+  height: calc(var(--ts) * 1.1);
   background: var(--accent);
   border-radius: 1px;
   transition: left 0.08s ease-out, top 0.08s ease-out;
   animation: blink 1s step-end infinite;
+}
+.type-preview {
+  font-family: var(--font-mono);
+  font-size: var(--type-size, 2rem);
+  color: var(--text);
+  padding: 8px 0 0;
+  overflow-wrap: anywhere;
 }
 .caret.typing {
   animation: none;
@@ -834,8 +843,10 @@ tr.abandoned td {
 
 @media (max-width: 640px) {
   .words-box {
-    font-size: 1.2rem;
-    --lh: 2rem;
+    --ts: calc(var(--type-size, 2rem) * 0.65);
+  }
+  .live {
+    font-size: calc(var(--type-size, 2rem) * 0.6);
   }
   .results {
     grid-template-columns: 1fr;

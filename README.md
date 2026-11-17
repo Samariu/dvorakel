@@ -21,6 +21,7 @@ Dvorak variant, including custom layouts with ä/ö/ü/ß on an AltGr layer.
   space belongs takes the space's place: it is shown in red between the words, counts as one error, and the next word
   starts empty. (So if you forget a space and keep typing, the next word is shifted by one letter and is wrong too.)
   The test ends as soon as the last word is complete.
+- **Text size**: the typing text is 2 rem by default (about Monkeytype's size). Settings → Appearance offers 1.25 to 4.
 - **EN / DE toggle** in the header. German is strict: only `ä ö ü ß` count, `ae/oe/ue/ss` are errors. German nouns
   keep their capital letters.
 - **Practice tab**: your weakest letter pairs, triples, characters and words, ranked by how much slower they are than

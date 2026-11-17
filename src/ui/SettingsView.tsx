@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { exportData, importData, resetData } from '../data/db';
-import { withGoal, type Settings, type Theme } from '../data/settings';
+import { TYPING_SIZES, withGoal, type Settings, type Theme } from '../data/settings';
 import { POOL_SIZES } from '../content/generator';
 import { dateKey, FREEZE_EVERY, goalFor, MAX_FREEZES } from '../streak/streak';
 
@@ -151,6 +151,18 @@ export function SettingsView({ settings, update, onDataChanged }: Props) {
             ))}
           </div>
         </Field>
+        <Field title="Text size" desc="Size of the text you type, in rem. 1.6 was the old size.">
+          <div className="seg" role="group" aria-label="Text size">
+            {TYPING_SIZES.map((n) => (
+              <button key={n} className={settings.typingSize === n ? 'on' : ''} onClick={() => update({ typingSize: n })}>
+                {n}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <div className="type-preview" aria-hidden>
+          the quick brown fox
+        </div>
       </section>
 
       <section className="card">

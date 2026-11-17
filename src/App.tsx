@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { quoteUsage } from './content/generator';
 import { allSessions, flushAbandoned, saveSession } from './data/db';
 import { loadSettings, saveSettings, type Settings } from './data/settings';
@@ -103,7 +103,7 @@ export function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" style={{ '--type-size': `${settings.typingSize}rem` } as CSSProperties}>
       <header className="header">
         <div className="logo" title="Dvorak + Orakel: it tells you what to practise">
           <span>

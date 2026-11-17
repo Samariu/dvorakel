@@ -13,6 +13,8 @@ export interface Settings {
   customText: string;
   drillLength: number;
   theme: Theme;
+  /** Font size of the text you type, in rem. */
+  typingSize: number;
   liveWpm: boolean;
   streakEnabled: boolean;
   goals: Goal[];
@@ -33,6 +35,9 @@ export interface StatsLayers {
   accuracy: ChartLayers;
 }
 
+/** Typing text sizes in rem (Monkeytype's default is about 2). */
+export const TYPING_SIZES = [1.25, 1.6, 2, 2.5, 3, 4];
+
 export const DEFAULT_SETTINGS: Settings = {
   lang: 'en',
   mode: { kind: 'time', seconds: 30 },
@@ -43,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   customText: '',
   drillLength: 50,
   theme: 'system',
+  typingSize: 2,
   liveWpm: true,
   streakEnabled: true,
   goals: [{ from: '2000-01-01', type: 'minutes', value: 10 }],
