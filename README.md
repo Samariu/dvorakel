@@ -23,6 +23,10 @@ Dvorak variant, including custom layouts with ä/ö/ü/ß on an AltGr layer.
   any single item, the top 5 of a category, or a *smart drill* that mixes them.
 - **Stats tab**: WPM and accuracy per session with your 60/100 WPM target lines, a 10-session average, personal
   bests per mode, a practice calendar and the full session history (each session can be deleted).
+- **Restarting isn't free**: a test counts as *started* at the first keystroke. If you restart it (Tab/Esc, the
+  restart button, changing a setting or the language), switch tabs or close the page before it ends, it is stored
+  as *abandoned*. Stats shows *completed / started* (overall and today) and lists abandoned tests in the history.
+  Abandoned tests feed the weak-spot analysis, but not speed, accuracy, personal bests or the streak.
 - **Streak** (can be turned off): a daily goal in minutes or tests. Every 7 goal days in a row earns a freeze (max 2),
   which is used automatically when you miss a day. Changing the goal only applies from that day on.
 - **Your data stays in your browser** (IndexedDB). Nothing is sent anywhere, and every person or browser that opens

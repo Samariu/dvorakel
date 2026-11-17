@@ -44,8 +44,8 @@ export function PracticeView({ settings, update, sessions, onStart }: Props) {
     <div>
       <h2 className="page-title">Practice · {langName}</h2>
       <p className="page-sub">
-        Based on your last {report.sessions} {langName} session{report.sessions === 1 ? '' : 's'} ({report.keystrokes.toLocaleString()}{' '}
-        keystrokes). Recent sessions count more. Weakness = how much slower than your typical item, plus a penalty for mistakes.
+        Based on your last {report.sessions} {langName} session{report.sessions === 1 ? '' : 's'}
+        {report.abandoned > 0 && ` (${report.abandoned} of them abandoned)`}, {report.keystrokes.toLocaleString()} keystrokes. Recent sessions count more. Weakness = how much slower than your typical item, plus a penalty for mistakes.
         Switch EN/DE in the header.
       </p>
 

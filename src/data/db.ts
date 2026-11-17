@@ -16,6 +16,47 @@ export async function saveSession(s: SessionRecord): Promise<number> {
   return db.sessions.add(s);
 }
 
+/**
+ * Abandoned tests that were in progress when the page was closed. IndexedDB
+ * writes can't be relied on during unload, so they are parked synchronously in
+ * localStorage and written to the database on the next start.
+ */
+const PENDING_KEY = 'dvorakel.pendingAbandoned';
+
+function readPending(): SessionRecord[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(PENDING_KEY) ?? '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePending(recs: SessionRecord[]) {
+  try {
+    if (recs.length) localStorage.setItem(PENDING_KEY, JSON.stringify(recs));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Storage full or blocked: the abandoned test is lost, nothing else breaks.
+  }
+}
+
+export function stashAbandoned(rec: SessionRecord): void {
+  writePending([...readPending().filter((r) => r.startedAt !== rec.startedAt), rec]);
+}
+
+/** The page came back from the back/forward cache: the test is still running. */
+export function unstashAbandoned(startedAt: number): void {
+  writePending(readPending().filter((r) => r.startedAt !== startedAt));
+}
+
+export async function flushAbandoned(): Promise<void> {
+  const pending = readPending();
+  if (!pending.length) return;
+  await db.sessions.bulkAdd(pending.map(({ id: _id, ...rest }) => ({ ...rest, abandoned: true }) as SessionRecord));
+  writePending([]);
+}
+
 export async function allSessions(): Promise<SessionRecord[]> {
   return db.sessions.orderBy('startedAt').toArray();
 }

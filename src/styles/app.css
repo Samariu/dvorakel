@@ -510,6 +510,18 @@ td.key {
 .table-scroll {
   overflow-x: auto;
 }
+tr.abandoned td {
+  color: var(--muted);
+}
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
 .btn {
   white-space: nowrap;
   border: 1px solid var(--line);

@@ -66,4 +66,10 @@ export interface SessionRecord extends SessionResult {
   typed: string[];
   ks: Keystroke[];
   source?: string;
+  /**
+   * The test was started (at least one key typed) but restarted or left before
+   * it finished. Its keystrokes feed the weak-spot analysis, but it is kept out
+   * of speed/accuracy stats, personal bests and the streak.
+   */
+  abandoned?: boolean;
 }

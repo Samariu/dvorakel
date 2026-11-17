@@ -19,6 +19,8 @@ export type Aggregate = Record<StatKind, Map<string, KeyStat>>;
 export interface AggregateInfo {
   agg: Aggregate;
   sessions: number;
+  /** How many of `sessions` were abandoned before the end. */
+  abandoned: number;
   keystrokes: number;
 }
 
@@ -40,20 +42,32 @@ function add(map: Map<string, KeyStat>, s: Sample, weight: number) {
   }
 }
 
-/** Aggregate samples over sessions, newest weighted most. `sessions` in any order. */
+/**
+ * Aggregate samples over sessions, newest weighted most. `sessions` in any order.
+ * Age and the session limit count completed sessions only, so restarting a lot
+ * doesn't push older data out faster; an abandoned session gets the weight of
+ * the next completed one after it.
+ */
 export function aggregate(sessions: SessionRecord[]): AggregateInfo {
-  const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt).slice(0, MAX_SESSIONS);
+  const sorted = [...sessions].sort((a, b) => b.startedAt - a.startedAt);
   const agg: Aggregate = { chars: new Map(), bigrams: new Map(), trigrams: new Map(), words: new Map() };
   let keystrokes = 0;
-  sorted.forEach((s, age) => {
+  let age = 0;
+  let used = 0;
+  let abandoned = 0;
+  for (const s of sorted) {
+    if (age >= MAX_SESSIONS) break;
     const weight = Math.pow(0.5, age / HALF_LIFE_SESSIONS);
     const ex = extract(s.words, s.typed, s.ks);
     keystrokes += s.ks.length;
     for (const kind of Object.keys(agg) as StatKind[]) {
       for (const sample of ex[kind]) add(agg[kind], sample, weight);
     }
-  });
-  return { agg, sessions: sorted.length, keystrokes };
+    used++;
+    if (s.abandoned) abandoned++;
+    else age++;
+  }
+  return { agg, sessions: used, abandoned, keystrokes };
 }
 
 export interface Weakness {
@@ -116,6 +130,7 @@ export function rankWeaknesses(map: Map<string, KeyStat>, kind: StatKind, minSam
 
 export interface WeaknessReport {
   sessions: number;
+  abandoned: number;
   keystrokes: number;
   chars: Weakness[];
   bigrams: Weakness[];
@@ -124,9 +139,10 @@ export interface WeaknessReport {
 }
 
 export function weaknessReport(sessions: SessionRecord[]): WeaknessReport {
-  const { agg, sessions: n, keystrokes } = aggregate(sessions);
+  const { agg, sessions: n, abandoned, keystrokes } = aggregate(sessions);
   return {
     sessions: n,
+    abandoned,
     keystrokes,
     chars: rankWeaknesses(agg.chars, 'chars').filter((w) => w.key !== ' '),
     bigrams: rankWeaknesses(agg.bigrams, 'bigrams'),
