@@ -17,9 +17,10 @@ export const K_SPACE = 1;
 export const K_BACK = 2;
 export const K_WORD_BACK = 3;
 /**
- * No-backspace mode: a letter typed where the space belonged. Counts as one
- * wrong keystroke at the end of word `w`; the letter becomes the first
- * character of word `w + 1`.
+ * No-backspace mode: a letter typed where the space belonged. It takes the
+ * space's slot (one wrong keystroke at the end of word `w`) and word `w + 1`
+ * starts empty. Sessions recorded before this rule used the letter as the
+ * first character of word `w + 1` instead.
  */
 export const K_MISSED_SPACE = 4;
 
@@ -66,6 +67,8 @@ export interface SessionRecord extends SessionResult {
   typed: string[];
   ks: Keystroke[];
   source?: string;
+  /** Quote mode: identifies the quote, so it isn't served again soon. */
+  quoteKey?: string;
   /**
    * The test was started (at least one key typed) but restarted or left before
    * it finished. Its keystrokes feed the weak-spot analysis, but it is kept out

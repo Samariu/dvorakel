@@ -1,4 +1,4 @@
-import type { Lang, QuoteLength } from '../types';
+import type { Lang, QuoteLength, SessionRecord } from '../types';
 import enWords from './en/words.json';
 import deWords from './de/words.json';
 import enLit from './en/literature.json';
@@ -97,10 +97,57 @@ export function quotes(lang: Lang): Quote[] {
   return QUOTES[lang];
 }
 
-export function pickQuote(lang: Lang, length: QuoteLength, rnd: Rng = Math.random): Quote {
+/** Stable id of a text as it is typed (FNV-1a over the normalised words). */
+export function quoteKey(words: string[]): string {
+  let h = 0x811c9dc5;
+  const s = words.join(' ');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+const keyCache = new WeakMap<Quote, string>();
+export function keyOf(q: Quote): string {
+  let k = keyCache.get(q);
+  if (k === undefined) keyCache.set(q, (k = quoteKey(splitText(q.text))));
+  return k;
+}
+
+/** Quote key → when it was last used (started), from the session history. */
+export function quoteUsage(sessions: SessionRecord[]): Map<string, number> {
+  const used = new Map<string, number>();
+  for (const s of sessions) {
+    // Sessions from before quote keys were stored: a completed quote test holds the whole text.
+    const key = s.quoteKey ?? (s.mode.kind === 'quote' && !s.abandoned ? quoteKey(s.words) : undefined);
+    if (key) used.set(key, Math.max(used.get(key) ?? 0, s.startedAt));
+  }
+  return used;
+}
+
+function fitting(lang: Lang, length: QuoteLength): Quote[] {
   const all = QUOTES[lang];
   const fit = length === 'any' ? all : all.filter((q) => quoteLength(q) === length);
-  return pick(fit.length ? fit : all, rnd);
+  return fit.length ? fit : all;
+}
+
+/** How many quotes of this length there are and how many you haven't started yet. */
+export function quotePoolInfo(lang: Lang, length: QuoteLength, used: ReadonlyMap<string, number>): { total: number; fresh: number } {
+  const fit = fitting(lang, length);
+  return { total: fit.length, fresh: fit.filter((q) => !used.has(keyOf(q))).length };
+}
+
+/**
+ * A quote you haven't started yet. Once all of this length are used, one of
+ * the quarter you used longest ago, so repeats are as far apart as possible.
+ */
+export function pickQuote(lang: Lang, length: QuoteLength, used: ReadonlyMap<string, number> = new Map(), rnd: Rng = Math.random): Quote {
+  const fit = fitting(lang, length);
+  const fresh = fit.filter((q) => !used.has(keyOf(q)));
+  if (fresh.length) return pick(fresh, rnd);
+  const oldest = [...fit].sort((a, b) => used.get(keyOf(a))! - used.get(keyOf(b))!);
+  return pick(oldest.slice(0, Math.max(1, Math.floor(oldest.length / 4))), rnd);
 }
 
 /** Split text into words, normalising whitespace and typographic quotes. */

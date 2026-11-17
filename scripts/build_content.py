@@ -32,11 +32,38 @@ BOOKS = {
         ("Die-Verwandlung_22367", "22367-8.txt", "Franz Kafka", "Die Verwandlung"),
         ("Effi-Briest_5323", "5323-8.txt", "Theodor Fontane", "Effi Briest"),
         ("Die-Leiden-des-jungen-Werther---Band-1_2407", "2407-8.txt", "Johann Wolfgang von Goethe", "Die Leiden des jungen Werther"),
+        # Added later: append only, so earlier quotes keep their selection.
+        ("Der-Stechlin-Roman_53628", "53628-0.txt", "Theodor Fontane", "Der Stechlin"),
+        ("Unterm-Birnbaum_26686", "26686-8.txt", "Theodor Fontane", "Unterm Birnbaum"),
+        ("Frau-Jenny-TreibelRoman-aus-der-Berliner-Gesellschaft_46184", "46184-8.txt", "Theodor Fontane", "Frau Jenny Treibel"),
+        ("Schach-von-WuthenowErz-hlung-aus-der-Zeit-des-Regiments-Gensdarmes_36905", "36905-8.txt", "Theodor Fontane", "Schach von Wuthenow"),
+        ("L-Adultera-Roman_52912", "52912-0.txt", "Theodor Fontane", "L'Adultera"),
+        ("BuddenbrooksVerfall-einer-Familie_34811", "34811-8.txt", "Thomas Mann", "Buddenbrooks"),
+        ("K-nigliche-HoheitRoman_35328", "35328-8.txt", "Thomas Mann", "Königliche Hoheit"),
+        ("Tonio-Kr-ger_23313", "23313-8.txt", "Thomas Mann", "Tonio Kröger"),
+        ("Der-Prozess-Roman_69327", "69327-0.txt", "Franz Kafka", "Der Prozess"),
+        ("Der-Schimmelreiter_74008", "74008-0.txt", "Theodor Storm", "Der Schimmelreiter"),
+        ("Brennendes-GeheimnisErz-hlung_24173", "24173-8.txt", "Stefan Zweig", "Brennendes Geheimnis"),
+        ("Casanovas-Heimfahrt_18148", "18148-8.txt", "Arthur Schnitzler", "Casanovas Heimfahrt"),
+        ("Aus-dem-Leben-eines-TaugenichtsNovelle_35312", "35312-8.txt", "Joseph von Eichendorff", "Aus dem Leben eines Taugenichts"),
     ],
     "en": [
         ("Pride-and-Prejudice_1342", "1342.txt", "Jane Austen", "Pride and Prejudice"),
         ("The-Adventures-of-Tom-Sawyer_74", "74-0.txt", "Mark Twain", "The Adventures of Tom Sawyer"),
         ("The-Picture-of-Dorian-Gray_174", "174.txt", "Oscar Wilde", "The Picture of Dorian Gray"),
+        # Added later: append only, so earlier quotes keep their selection.
+        ("Emma_158", "158.txt", "Jane Austen", "Emma"),
+        ("Persuasion_105", "105.txt", "Jane Austen", "Persuasion"),
+        ("Sense-and-Sensibility_161", "161.txt", "Jane Austen", "Sense and Sensibility"),
+        ("Great-Expectations_1400", "1400.txt", "Charles Dickens", "Great Expectations"),
+        ("Jane-Eyre_1260", "1260.txt", "Charlotte Brontë", "Jane Eyre"),
+        ("Middlemarch_145", "145.txt", "George Eliot", "Middlemarch"),
+        ("Frankenstein_84", "84.txt", "Mary Shelley", "Frankenstein"),
+        ("The-Adventures-of-Sherlock-Holmes_1661", "1661.txt", "Arthur Conan Doyle", "The Adventures of Sherlock Holmes"),
+        ("Little-Women_514", "514.txt", "Louisa May Alcott", "Little Women"),
+        ("Anne-of-Green-Gables_45", "45.txt", "L. M. Montgomery", "Anne of Green Gables"),
+        ("The-Age-of-Innocence_541", "541.txt", "Edith Wharton", "The Age of Innocence"),
+        ("The-Call-of-the-Wild_215", "215.txt", "Jack London", "The Call of the Wild"),
     ],
 }
 
@@ -191,7 +218,7 @@ def normalise(s, lang):
     return s
 
 
-def build_quotes(cache, lang, per_book=25, seed=42):
+def build_quotes(cache, lang, per_book=60, seed=42):
     rnd = random.Random(seed)
     quotes = []
     for repo, file, author, title in BOOKS[lang]:
@@ -225,19 +252,25 @@ def build_quotes(cache, lang, per_book=25, seed=42):
 
 
 def main():
-    cache = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, ".content-cache")
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    quotes_only = "--quotes-only" in sys.argv
+    cache = args[0] if args else os.path.join(ROOT, ".content-cache")
     os.makedirs(cache, exist_ok=True)
-    en_d = load_dict(cache, "en/en_US")
-    de_d = load_dict(cache, "de/de_DE_frami")
-    for lang, d in (("en", en_d), ("de", de_d)):
-        words = build_words(cache, lang, d, en_d, casing_counts(cache) if lang == "de" else None)
+    if not quotes_only:
+        en_d = load_dict(cache, "en/en_US")
+        de_d = load_dict(cache, "de/de_DE_frami")
+    for lang in ("en", "de"):
         os.makedirs(os.path.join(OUT, lang), exist_ok=True)
-        with open(os.path.join(OUT, lang, "words.json"), "w", encoding="utf-8") as f:
-            json.dump(words, f, ensure_ascii=False, separators=(",", ":"))
+        if not quotes_only:
+            d = en_d if lang == "en" else de_d
+            words = build_words(cache, lang, d, en_d, casing_counts(cache) if lang == "de" else None)
+            with open(os.path.join(OUT, lang, "words.json"), "w", encoding="utf-8") as f:
+                json.dump(words, f, ensure_ascii=False, separators=(",", ":"))
+            print(lang, len(words), "words")
         quotes = build_quotes(cache, lang)
         with open(os.path.join(OUT, lang, "literature.json"), "w", encoding="utf-8") as f:
             json.dump(quotes, f, ensure_ascii=False, indent=1)
-        print(lang, len(words), "words", len(quotes), "quotes")
+        print(lang, len(quotes), "quotes")
 
 
 if __name__ == "__main__":

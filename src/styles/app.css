@@ -314,6 +314,16 @@ a {
 .word .x {
   color: var(--error-extra);
 }
+/* No-backspace: a letter typed where the space belongs sits in the space itself. */
+.word .gap {
+  display: inline-block;
+  width: 0.6em;
+  margin-right: -0.6em;
+  text-align: center;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  border-radius: 3px;
+}
 .caret {
   position: absolute;
   width: 2px;

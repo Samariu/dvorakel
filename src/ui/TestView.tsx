@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import type { ActiveDrill } from '../App';
 import { drillWords } from '../analysis/drills';
-import { generateWords, pickQuote, splitText } from '../content/generator';
+import { generateWords, keyOf, pickQuote, quotePoolInfo, splitText } from '../content/generator';
 import { stashAbandoned, unstashAbandoned } from '../data/db';
 import type { Settings } from '../data/settings';
 import { keydownAction, shouldPreventKeydown, textActions, type Action } from '../engine/input';
@@ -18,11 +18,14 @@ interface Props {
   drill: ActiveDrill | null;
   clearDrill: () => void;
   onSaved: (s: SessionRecord) => void;
+  /** Quote key → last used, from all stored sessions (incl. abandoned). */
+  usedQuotes: ReadonlyMap<string, number>;
 }
 
 interface Test {
   session: TypingSession;
   source?: string;
+  quoteKey?: string;
   id: number;
   /** Settings and drill the test was built with (they may change before it is stored). */
   settings: Settings;
@@ -37,12 +40,13 @@ let testId = 0;
 
 const CUSTOM_PLACEHOLDER = 'Paste your own text in the box above and press save.';
 
-function buildTest(settings: Settings, drill: ActiveDrill | null): Test {
+function buildTest(settings: Settings, drill: ActiveDrill | null, usedQuotes: ReadonlyMap<string, number>): Test {
   const { lang, mode } = settings;
   const wordOpts = { punctuation: settings.punctuation, numbers: settings.numbers, poolSize: settings.poolSize };
   const base = { noBackspace: settings.noBackspace };
   let session: TypingSession;
   let source: string | undefined;
+  let quoteKey: string | undefined;
   if (drill) {
     const words = drillWords(lang, drill.targets, settings.drillLength);
     session = new TypingSession(words.length ? words : ['nothing', 'to', 'drill', 'yet'], base);
@@ -55,19 +59,20 @@ function buildTest(settings: Settings, drill: ActiveDrill | null): Test {
   } else if (mode.kind === 'words') {
     session = new TypingSession(generateWords(lang, mode.count, wordOpts), base);
   } else if (mode.kind === 'quote') {
-    const q = pickQuote(lang, mode.length);
+    const q = pickQuote(lang, mode.length, usedQuotes);
     source = q.source;
+    quoteKey = keyOf(q);
     session = new TypingSession(splitText(q.text), base);
   } else {
     const words = splitText(settings.customText);
     session = new TypingSession(words.length ? words : splitText(CUSTOM_PLACEHOLDER), base);
   }
-  return { session, source, id: ++testId, settings, drill };
+  return { session, source, quoteKey, id: ++testId, settings, drill };
 }
 
 /** Build the stored record for a test, finished or not. */
 function buildRecord(test: Test, abandoned: boolean): SessionRecord {
-  const { session, source, settings: s, drill: d } = test;
+  const { session, source, quoteKey, settings: s, drill: d } = test;
   const ks = session.ks;
   // An abandoned test ends at its last keystroke: idle time before the restart
   // is not typing time.
@@ -90,6 +95,7 @@ function buildRecord(test: Test, abandoned: boolean): SessionRecord {
     typed: [...session.typed],
     ks,
     source,
+    ...(quoteKey ? { quoteKey } : {}),
     ...(abandoned ? { abandoned: true } : {}),
   };
 }
@@ -103,8 +109,13 @@ const TIMES = [15, 30, 60, 120];
 const COUNTS = [10, 25, 50, 100];
 const QUOTE_LENGTHS: QuoteLength[] = ['short', 'medium', 'long', 'any'];
 
-export function TestView({ settings, update, sessions, drill, clearDrill, onSaved }: Props) {
-  const [test, setTest] = useState<Test>(() => buildTest(settings, drill));
+export function TestView({ settings, update, sessions, drill, clearDrill, onSaved, usedQuotes }: Props) {
+  // Quotes used in this view but maybe not yet back from the database.
+  const localUsed = useRef(new Map<string, number>());
+  const usedRef = useRef(usedQuotes);
+  usedRef.current = usedQuotes;
+  const allUsed = useCallback(() => new Map([...usedRef.current, ...localUsed.current]), []);
+  const [test, setTest] = useState<Test>(() => buildTest(settings, drill, allUsed()));
   const [result, setResult] = useState<SessionRecord | null>(null);
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [focused, setFocused] = useState(false);
@@ -127,6 +138,7 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
     const t = testRef.current;
     if (!inProgress(t) || resultRef.current) return;
     t.recorded = true;
+    if (t.quoteKey) localUsed.current.set(t.quoteKey, Date.now());
     // A timed test whose time ran out before the timer noticed is complete.
     if (t.session.tick(performance.now())) {
       const rec = buildRecord(t, false);
@@ -139,9 +151,9 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
   const restart = useCallback(() => {
     abandonCurrent();
     setResult(null);
-    setTest(buildTest(settingsRef.current, drillRef.current));
+    setTest(buildTest(settingsRef.current, drillRef.current, allUsed()));
     setTimeout(focusInput, 0);
-  }, [focusInput, abandonCurrent]);
+  }, [focusInput, abandonCurrent, allUsed]);
 
   // Leaving the Test tab mid-test abandons it.
   useEffect(() => abandonCurrent, [abandonCurrent]);
@@ -192,6 +204,7 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
     const t = testRef.current;
     if (t.recorded) return;
     t.recorded = true;
+    if (t.quoteKey) localUsed.current.set(t.quoteKey, Date.now());
     const rec = buildRecord(t, false);
     setResult(rec);
     const typedKeys = rec.ks.filter(isTyping).length;
@@ -353,6 +366,7 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
           ) : (
             <span className="dim" style={{ fontSize: '0.9rem', fontFamily: 'var(--font-sans)' }}>
               {settings.lang === 'de' ? 'Deutsch' : 'English'} · {drill ? 'drill' : modeText(mode)}
+              {!drill && mode.kind === 'quote' && ` · ${freshText(quotePoolInfo(settings.lang, mode.length, allUsed()))}`}
               {settings.noBackspace ? ' · no backspace' : ''}
             </span>
           )}
@@ -378,6 +392,10 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
       </div>
     </div>
   );
+}
+
+function freshText({ total, fresh }: { total: number; fresh: number }): string {
+  return fresh > 0 ? `${fresh} of ${total} not typed yet` : `all ${total} typed, repeating the oldest`;
 }
 
 function modeText(m: ModeSpec): string {
@@ -501,6 +519,11 @@ function Words({ session, focused, onClick }: { session: TypingSession; focused:
                     {ch}
                   </span>
                 ))}
+              {session.gaps.has(i) && (
+                <span className="gap" title="typed instead of the space">
+                  {session.gaps.get(i)}
+                </span>
+              )}
             </span>
           );
         })}

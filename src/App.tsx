@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { quoteUsage } from './content/generator';
 import { allSessions, flushAbandoned, saveSession } from './data/db';
 import { loadSettings, saveSettings, type Settings } from './data/settings';
 import { computeStreak, dateKey, type DayActivity } from './streak/streak';
@@ -82,6 +83,7 @@ export function App() {
   }, []);
 
   const completed = useMemo(() => (sessions ?? []).filter((s) => !s.abandoned), [sessions]);
+  const usedQuotes = useMemo(() => quoteUsage(sessions ?? []), [sessions]);
 
   const today = dateKey(new Date());
   const streak = useMemo(
@@ -134,8 +136,10 @@ export function App() {
       {loadError && <p className="notice">⚠ {loadError}</p>}
 
       <main>
-        {tab === 'test' && (
+        {/* Wait for the history, so the first quote isn't one you already typed. */}
+        {tab === 'test' && sessions !== null && (
           <TestView
+            usedQuotes={usedQuotes}
             settings={settings}
             update={update}
             sessions={completed}
