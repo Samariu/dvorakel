@@ -90,11 +90,16 @@ export function computeResult(
     acc: typing.length ? round1((100 * correctKs) / typing.length) : 0,
     consistency: round1(consistency(full)),
     durationMs: Math.round(durationMs),
-    chars: countChars(words, typed, finishedByTime),
+    chars: withMissedSpaces(countChars(words, typed, finishedByTime), ks),
     wpmSeries,
     rawSeries: rawPerSec.map(round1),
     errSeries,
   };
+}
+
+/** A letter typed in a space's slot is an incorrect character. */
+function withMissedSpaces(c: CharCounts, ks: Keystroke[]): CharCounts {
+  return { ...c, incorrect: c.incorrect + ks.filter((k) => k[3] === K_MISSED_SPACE).length };
 }
 
 /** 100 = perfectly even speed; based on the coefficient of variation. */

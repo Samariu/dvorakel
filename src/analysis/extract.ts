@@ -40,17 +40,11 @@ export function extract(words: string[], typed: string[], ks: Keystroke[]): Extr
     j >= 0 && ks[j][3] === K_CHAR && ks[j][1] === w && ks[j][2] === c && ok[j];
 
   for (let i = 0; i < ks.length; i++) {
-    const [t, w, c, kind, ch] = ks[i];
-    if (kind === K_MISSED_SPACE) {
-      // The letter typed instead of the space is the first attempt at the next word.
-      const next = words[w + 1];
-      const pos = `${w + 1}:0`;
-      if (next && !visited.has(pos)) {
-        visited.add(pos);
-        out.chars.push({ key: next[0], ms: undefined, err: ch !== next[0] });
-      }
-      continue;
-    }
+    const [t, w, c, kind] = ks[i];
+    // A letter in the space's slot is an error on the space, which is not a
+    // drillable character. (Older sessions used the letter for the next word;
+    // their next keystrokes start at char 1, so only that one sample is lost.)
+    if (kind === K_MISSED_SPACE) continue;
     const target = words[w] ?? '';
     if ((kind !== K_CHAR && kind !== K_SPACE) || c >= target.length) continue;
     const pos = `${w}:${c}`;
@@ -105,7 +99,7 @@ function extractWords(words: string[], typed: string[], ks: Keystroke[], ok: boo
     if (!completed) continue;
     const idx = byWord.get(w);
     if (!idx) continue;
-    const chars = idx.filter((i) => ks[i][3] !== K_SPACE);
+    const chars = idx.filter((i) => ks[i][3] !== K_SPACE && ks[i][3] !== K_MISSED_SPACE);
     if (chars.length === 0) continue;
     const err = idx.some((i) => !ok[i]) || typed[w] !== target;
     const first = chars[0];

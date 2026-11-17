@@ -55,7 +55,8 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
   const [kind, setKind] = useState<KindFilter>('tests');
   const [showAll, setShowAll] = useState(false);
 
-  const filtered = useMemo(
+  // Everything you started (incl. abandoned) in the current filter…
+  const scoped = useMemo(
     () =>
       sessions
         .filter((s) => lang === 'all' || s.lang === lang)
@@ -63,6 +64,14 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
         .sort((a, b) => a.startedAt - b.startedAt),
     [sessions, lang, kind],
   );
+  // …and only what you finished: speed, accuracy and bests come from these.
+  const filtered = useMemo(() => scoped.filter((s) => !s.abandoned), [scoped]);
+  const completedAll = useMemo(() => sessions.filter((s) => !s.abandoned), [sessions]);
+
+  const today = dateKey(new Date());
+  const startedToday = scoped.filter((s) => s.dateKey === today);
+  const completedToday = startedToday.filter((s) => !s.abandoned).length;
+  const completionRate = scoped.length ? Math.round((100 * filtered.length) / scoped.length) : null;
 
   const wpms = filtered.map((s) => s.wpm);
   const accs = filtered.map((s) => s.acc);
@@ -80,16 +89,16 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
     for (const m of PB_MODES) {
       const row: { mode: string; en?: SessionRecord; de?: SessionRecord } = { mode: m };
       for (const l of ['en', 'de'] as const) {
-        for (const s of sessions) {
+        for (const s of completedAll) {
           if (s.lang === l && modeKey(s.mode) === m && !s.punctuation && !s.numbers && (!row[l] || s.wpm > row[l]!.wpm)) row[l] = s;
         }
       }
       if (row.en || row.de) rows.push(row);
     }
     return rows;
-  }, [sessions]);
+  }, [completedAll]);
 
-  const history = [...filtered].reverse().slice(0, showAll ? undefined : 25);
+  const history = [...scoped].reverse().slice(0, showAll ? undefined : 25);
 
   const layers = settings.statsLayers;
   const toggle =
@@ -109,7 +118,11 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
   return (
     <div>
       <h2 className="page-title">Statistics</h2>
-      <p className="page-sub">Every completed test and drill is stored in this browser. Export a backup in Settings.</p>
+      <p className="page-sub">
+        Every test and drill you start is stored in this browser, including ones you restart or leave before the end
+        (marked <i>abandoned</i>). Those count for your weak spots but not for speed, accuracy, bests or the streak.
+        Export a backup in Settings.
+      </p>
 
       <div className="filters">
         <div className="seg" role="group" aria-label="Language filter">
@@ -129,7 +142,15 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
       </div>
 
       <div className="tiles">
-        <Tile label="sessions" value={filtered.length.toLocaleString()} />
+        <Tile
+          label={`${kind === 'all' ? 'sessions' : kind} completed / started`}
+          value={`${filtered.length.toLocaleString()} / ${scoped.length.toLocaleString()}`}
+          delta={
+            completionRate === null
+              ? undefined
+              : `${completionRate}% · today ${completedToday} / ${startedToday.length}`
+          }
+        />
         <Tile label="time typed" value={fmtDuration(totalMs)} />
         <Tile
           label="avg wpm, last 10"
@@ -240,7 +261,7 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
               </thead>
               <tbody>
                 {history.map((s) => (
-                  <tr key={s.id ?? s.startedAt}>
+                  <tr key={s.id ?? s.startedAt} className={s.abandoned ? 'abandoned' : undefined}>
                     <td>{fmtDate(s.startedAt)}</td>
                     <td>{s.lang.toUpperCase()}</td>
                     <td>
@@ -248,9 +269,11 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
                       {s.punctuation ? ' · punct.' : ''}
                       {s.numbers ? ' · num.' : ''}
                       {s.noBackspace ? ' · no ⌫' : ''}
+                      {s.abandoned && <span className="tag">abandoned</span>}
                     </td>
-                    <td className="num">{Math.round(s.wpm)}</td>
-                    <td className="num">{Math.round(s.raw)}</td>
+                    {/* Speed over a partial run of a few keys is noise, not a result. */}
+                    <td className="num">{s.abandoned ? '–' : Math.round(s.wpm)}</td>
+                    <td className="num">{s.abandoned ? '–' : Math.round(s.raw)}</td>
                     <td className="num">{Math.round(s.acc)}%</td>
                     <td className="num">{fmtDuration(s.durationMs)}</td>
                     <td className="num">
@@ -264,9 +287,9 @@ export function StatsView({ settings, update, sessions, streak, onChanged }: Pro
             </table>
           </div>
         )}
-        {filtered.length > 25 && (
+        {scoped.length > 25 && (
           <button className="btn small" style={{ marginTop: 8 }} onClick={() => setShowAll(!showAll)}>
-            {showAll ? 'show fewer' : `show all ${filtered.length}`}
+            {showAll ? 'show fewer' : `show all ${scoped.length}`}
           </button>
         )}
       </div>

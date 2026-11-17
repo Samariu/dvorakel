@@ -13,9 +13,14 @@ Dvorak variant, including custom layouts with ä/ö/ü/ß on an AltGr layer.
 
 - **Tests**: time (15/30/60/120 s), word count (10/25/50/100), quotes (public-domain literature plus everyday
   sentences), and your own pasted text. Optional punctuation and numbers.
+- **Quotes don't repeat**: about 940 in English and 1,000 in German. A quote counts as used once you type its first key (finished or
+  not). You get quotes you haven't typed yet first; the test screen shows how many of the chosen length are left.
+  When all are used, it repeats the ones you typed longest ago.
 - **Error handling**: Monkeytype-style by default (errors shown in red, backspace allowed, Ctrl+Backspace deletes a
   word). There is also a *no-backspace* mode where mistakes can't be corrected. In that mode a letter typed where the
-  space belongs counts as one error and starts the next word, and the test ends as soon as the last word is complete.
+  space belongs takes the space's place: it is shown in red between the words, counts as one error, and the next word
+  starts empty. (So if you forget a space and keep typing, the next word is shifted by one letter and is wrong too.)
+  The test ends as soon as the last word is complete.
 - **EN / DE toggle** in the header. German is strict: only `ä ö ü ß` count, `ae/oe/ue/ss` are errors. German nouns
   keep their capital letters.
 - **Practice tab**: your weakest letter pairs, triples, characters and words, ranked by how much slower they are than
@@ -23,6 +28,10 @@ Dvorak variant, including custom layouts with ä/ö/ü/ß on an AltGr layer.
   any single item, the top 5 of a category, or a *smart drill* that mixes them.
 - **Stats tab**: WPM and accuracy per session with your 60/100 WPM target lines, a 10-session average, personal
   bests per mode, a practice calendar and the full session history (each session can be deleted).
+- **Restarting isn't free**: a test counts as *started* at the first keystroke. If you restart it (Tab/Esc, the
+  restart button, changing a setting or the language), switch tabs or close the page before it ends, it is stored
+  as *abandoned*. Stats shows *completed / started* (overall and today) and lists abandoned tests in the history.
+  Abandoned tests feed the weak-spot analysis, but not speed, accuracy, personal bests or the streak.
 - **Streak** (can be turned off): a daily goal in minutes or tests. Every 7 goal days in a row earns a freeze (max 2),
   which is used automatically when you miss a day. Changing the goal only applies from that day on.
 - **Your data stays in your browser** (IndexedDB). Nothing is sent anywhere, and every person or browser that opens
@@ -82,6 +91,10 @@ python -m venv .venv && .venv/bin/pip install spylls
   [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (OpenSubtitles 2018), licensed
   **CC BY-SA 4.0**. They are filtered with the LibreOffice Hunspell dictionaries (proper names and non-words removed,
   German noun capitalisation restored). Because the source is subtitles, the lists lean conversational.
-- **Literature quotes** come from public-domain books via Project Gutenberg: Kafka, Fontane and Goethe in German
-  (pre-1996 spellings such as *daß* are modernised), and Austen, Twain and Wilde in English.
+- **Literature quotes** come from public-domain books via Project Gutenberg (15 English and 16 German books, up to 60
+  quotes each): in German Fontane, Thomas Mann, Kafka, Goethe, Storm, Zweig, Schnitzler and Eichendorff (pre-1996
+  spellings such as *daß* are modernised, quotes with older archaic spellings are dropped); in English Austen,
+  Dickens, Brontë, Eliot, Shelley, Conan Doyle, Twain, Wilde, Alcott, Montgomery, Wharton and London. Run the script
+  with `--quotes-only` to rebuild just the quotes. New books are appended to the list so earlier quotes stay the
+  same (the app recognises used quotes by their text).
 - **Everyday sentences** (`src/content/*/modern.json`) were written for this project.

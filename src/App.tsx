@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { allSessions, saveSession } from './data/db';
+import { quoteUsage } from './content/generator';
+import { allSessions, flushAbandoned, saveSession } from './data/db';
 import { loadSettings, saveSettings, type Settings } from './data/settings';
 import { computeStreak, dateKey, type DayActivity } from './streak/streak';
 import type { DrillTarget, Lang, SessionRecord } from './types';
@@ -26,6 +27,7 @@ const TABS: { id: Tab; label: string }[] = [
 export function activityByDay(sessions: SessionRecord[]): Map<string, DayActivity> {
   const m = new Map<string, DayActivity>();
   for (const s of sessions) {
+    if (s.abandoned) continue;
     const a = m.get(s.dateKey) ?? { seconds: 0, tests: 0 };
     a.seconds += s.durationMs / 1000;
     a.tests += 1;
@@ -50,7 +52,11 @@ export function App() {
   }, []);
 
   const reload = useCallback(() => {
-    allSessions()
+    flushAbandoned()
+      .catch(() => {
+        // Keep them parked; the next start tries again.
+      })
+      .then(allSessions)
       .then(setSessions)
       .catch((e: unknown) => {
         setLoadError(String(e));
@@ -75,6 +81,9 @@ export function App() {
       setSessions((s) => [...(s ?? []), rec]);
     }
   }, []);
+
+  const completed = useMemo(() => (sessions ?? []).filter((s) => !s.abandoned), [sessions]);
+  const usedQuotes = useMemo(() => quoteUsage(sessions ?? []), [sessions]);
 
   const today = dateKey(new Date());
   const streak = useMemo(
@@ -127,11 +136,13 @@ export function App() {
       {loadError && <p className="notice">⚠ {loadError}</p>}
 
       <main>
-        {tab === 'test' && (
+        {/* Wait for the history, so the first quote isn't one you already typed. */}
+        {tab === 'test' && sessions !== null && (
           <TestView
+            usedQuotes={usedQuotes}
             settings={settings}
             update={update}
-            sessions={sessions ?? []}
+            sessions={completed}
             drill={drill}
             clearDrill={() => setDrill(null)}
             onSaved={onSaved}

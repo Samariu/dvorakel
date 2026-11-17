@@ -89,6 +89,18 @@ describe('weakness ranking', () => {
     const mean = st.msSum / st.msN;
     expect(mean).toBeLessThan((150 + 950) / 2);
   });
+
+  it('uses abandoned sessions but does not let them age older data', () => {
+    const old = play(['ab', 'ab'], 'ab ab', { b: 800 });
+    const quit = play(['ab', 'ab'], 'ab');
+    const plain = aggregate([record(old, 1)]).agg.bigrams.get('ab')!;
+    const many = Array.from({ length: 50 }, (_, i) => ({ ...record(quit, 10 + i), abandoned: true }));
+    const info = aggregate([record(old, 1), ...many]);
+    expect(info.sessions).toBe(51);
+    expect(info.abandoned).toBe(50);
+    // The completed session is the newest completed one: full weight despite 50 newer abandoned ones.
+    expect(info.agg.bigrams.get('ab')!.n).toBeCloseTo(plain.n + 50, 5);
+  });
 });
 
 describe('drills', () => {
@@ -123,13 +135,16 @@ describe('weightedMedian', () => {
 });
 
 describe('missed space (no-backspace mode)', () => {
-  it('counts the letter as the first attempt at the next word', () => {
+  it('counts the gap letter against the space, not the next word', () => {
     const s = new TypingSession(['the', 'cat'], { noBackspace: true });
     let t = 1000;
-    for (const ch of 'thecat') s.typeChar(ch, (t += 150));
+    for (const ch of 'thexcat') s.typeChar(ch, (t += 150));
     const ex = extract(s.words, s.typed, s.ks);
     expect(ex.chars.map((c) => c.key).join('')).toBe('thecat');
+    expect(ex.chars.every((c) => !c.err)).toBe(true);
+    // First letter after the gap is not timed (no clean space before it).
     expect(ex.chars[3]).toEqual({ key: 'c', ms: undefined, err: false });
     expect(ex.words.find((w) => w.key === 'the')?.err).toBe(true);
+    expect(ex.words.find((w) => w.key === 'the')?.ms).toBeCloseTo(150, 5);
   });
 });

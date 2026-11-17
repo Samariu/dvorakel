@@ -21,6 +21,8 @@ export class TypingSession {
   readonly typed: string[] = [''];
   wordIndex = 0;
   readonly ks: Keystroke[] = [];
+  /** No-backspace mode: word index → letter typed in the space after it. */
+  readonly gaps = new Map<number, string>();
   startT: number | null = null;
   endT: number | null = null;
   private readonly opts: SessionOptions;
@@ -73,12 +75,13 @@ export class TypingSession {
     }
     const isLast = w === this.words.length - 1;
     if (this.noBackspace && !isLast && cur.length >= this.words[w].length) {
-      // Mistakes can't be fixed, so a letter instead of the space moves on:
-      // one error, and the letter starts the next word.
+      // Mistakes can't be fixed, so a letter instead of the space takes the
+      // space's slot (one error, shown in the gap) and the next word starts empty.
       this.start(t);
       this.record(t, w, cur.length, K_MISSED_SPACE, ch);
+      this.gaps.set(w, ch);
       this.wordIndex++;
-      this.typed.push(ch);
+      this.typed.push('');
       this.maybeExtend();
       return;
     }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import type { ActiveDrill } from '../App';
 import { drillWords } from '../analysis/drills';
-import { generateWords, pickQuote, splitText } from '../content/generator';
+import { generateWords, keyOf, pickQuote, quotePoolInfo, splitText } from '../content/generator';
+import { stashAbandoned, unstashAbandoned } from '../data/db';
 import type { Settings } from '../data/settings';
 import { keydownAction, shouldPreventKeydown, textActions, type Action } from '../engine/input';
 import { computeResult, isTyping, missedSpaceWords, wpmChars } from '../engine/metrics';
@@ -17,24 +18,35 @@ interface Props {
   drill: ActiveDrill | null;
   clearDrill: () => void;
   onSaved: (s: SessionRecord) => void;
+  /** Quote key → last used, from all stored sessions (incl. abandoned). */
+  usedQuotes: ReadonlyMap<string, number>;
 }
 
 interface Test {
   session: TypingSession;
   source?: string;
+  quoteKey?: string;
   id: number;
+  /** Settings and drill the test was built with (they may change before it is stored). */
+  settings: Settings;
+  drill: ActiveDrill | null;
+  /** Wall-clock start, fixed once known so every record of this test agrees. */
+  startedAt?: number;
+  /** Already stored (as completed or abandoned); never store twice. */
+  recorded?: boolean;
 }
 
 let testId = 0;
 
 const CUSTOM_PLACEHOLDER = 'Paste your own text in the box above and press save.';
 
-function buildTest(settings: Settings, drill: ActiveDrill | null): Test {
+function buildTest(settings: Settings, drill: ActiveDrill | null, usedQuotes: ReadonlyMap<string, number>): Test {
   const { lang, mode } = settings;
   const wordOpts = { punctuation: settings.punctuation, numbers: settings.numbers, poolSize: settings.poolSize };
   const base = { noBackspace: settings.noBackspace };
   let session: TypingSession;
   let source: string | undefined;
+  let quoteKey: string | undefined;
   if (drill) {
     const words = drillWords(lang, drill.targets, settings.drillLength);
     session = new TypingSession(words.length ? words : ['nothing', 'to', 'drill', 'yet'], base);
@@ -47,22 +59,63 @@ function buildTest(settings: Settings, drill: ActiveDrill | null): Test {
   } else if (mode.kind === 'words') {
     session = new TypingSession(generateWords(lang, mode.count, wordOpts), base);
   } else if (mode.kind === 'quote') {
-    const q = pickQuote(lang, mode.length);
+    const q = pickQuote(lang, mode.length, usedQuotes);
     source = q.source;
+    quoteKey = keyOf(q);
     session = new TypingSession(splitText(q.text), base);
   } else {
     const words = splitText(settings.customText);
     session = new TypingSession(words.length ? words : splitText(CUSTOM_PLACEHOLDER), base);
   }
-  return { session, source, id: ++testId };
+  return { session, source, quoteKey, id: ++testId, settings, drill };
+}
+
+/** Build the stored record for a test, finished or not. */
+function buildRecord(test: Test, abandoned: boolean): SessionRecord {
+  const { session, source, quoteKey, settings: s, drill: d } = test;
+  const ks = session.ks;
+  // An abandoned test ends at its last keystroke: idle time before the restart
+  // is not typing time.
+  const durationMs = abandoned ? (ks.length ? ks[ks.length - 1][0] : 0) : session.elapsedMs(0);
+  const mode: ModeSpec = d ? { kind: 'drill', label: d.label, targets: d.targets } : s.mode;
+  // Abandoned tests stop mid-word like a timed test does: the unfinished word is not "missed".
+  const res = computeResult(session.words, session.typed, ks, durationMs, abandoned || mode.kind === 'time');
+  test.startedAt ??= Math.round(Date.now() - (performance.now() - (session.startT ?? performance.now())));
+  const startedAt = test.startedAt;
+  return {
+    ...res,
+    startedAt,
+    dateKey: dateKey(new Date(startedAt)),
+    lang: s.lang,
+    mode,
+    punctuation: s.punctuation,
+    numbers: s.numbers,
+    noBackspace: s.noBackspace,
+    words: session.reachedWords(),
+    typed: [...session.typed],
+    ks,
+    source,
+    ...(quoteKey ? { quoteKey } : {}),
+    ...(abandoned ? { abandoned: true } : {}),
+  };
+}
+
+/** Started (a key was typed), not finished, not yet stored. */
+function inProgress(test: Test): boolean {
+  return !test.recorded && test.session.started && !test.session.finished;
 }
 
 const TIMES = [15, 30, 60, 120];
 const COUNTS = [10, 25, 50, 100];
 const QUOTE_LENGTHS: QuoteLength[] = ['short', 'medium', 'long', 'any'];
 
-export function TestView({ settings, update, sessions, drill, clearDrill, onSaved }: Props) {
-  const [test, setTest] = useState<Test>(() => buildTest(settings, drill));
+export function TestView({ settings, update, sessions, drill, clearDrill, onSaved, usedQuotes }: Props) {
+  // Quotes used in this view but maybe not yet back from the database.
+  const localUsed = useRef(new Map<string, number>());
+  const usedRef = useRef(usedQuotes);
+  usedRef.current = usedQuotes;
+  const allUsed = useCallback(() => new Map([...usedRef.current, ...localUsed.current]), []);
+  const [test, setTest] = useState<Test>(() => buildTest(settings, drill, allUsed()));
   const [result, setResult] = useState<SessionRecord | null>(null);
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [focused, setFocused] = useState(false);
@@ -75,14 +128,56 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
   drillRef.current = drill;
   const resultRef = useRef(result);
   resultRef.current = result;
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
 
   const focusInput = useCallback(() => inputRef.current?.focus({ preventScroll: true }), []);
 
+  /** A test you leave after typing still counts: store it as abandoned. */
+  const abandonCurrent = useCallback(() => {
+    const t = testRef.current;
+    if (!inProgress(t) || resultRef.current) return;
+    t.recorded = true;
+    if (t.quoteKey) localUsed.current.set(t.quoteKey, Date.now());
+    // A timed test whose time ran out before the timer noticed is complete.
+    if (t.session.tick(performance.now())) {
+      const rec = buildRecord(t, false);
+      if (rec.durationMs >= 2000 && rec.ks.filter(isTyping).length >= 5) onSavedRef.current(rec);
+      return;
+    }
+    onSavedRef.current(buildRecord(t, true));
+  }, []);
+
   const restart = useCallback(() => {
+    abandonCurrent();
     setResult(null);
-    setTest(buildTest(settingsRef.current, drillRef.current));
+    setTest(buildTest(settingsRef.current, drillRef.current, allUsed()));
     setTimeout(focusInput, 0);
-  }, [focusInput]);
+  }, [focusInput, abandonCurrent, allUsed]);
+
+  // Leaving the Test tab mid-test abandons it.
+  useEffect(() => abandonCurrent, [abandonCurrent]);
+
+  // Closing or reloading the page mid-test: IndexedDB can't be trusted to
+  // finish during unload, so park the record synchronously in localStorage.
+  useEffect(() => {
+    const onHide = () => {
+      const t = testRef.current;
+      if (!inProgress(t) || resultRef.current) return;
+      stashAbandoned(buildRecord(t, true));
+    };
+    const onShow = (e: PageTransitionEvent) => {
+      // Restored from the back/forward cache: the test is still alive.
+      const t = testRef.current;
+      if (e.persisted && inProgress(t)) unstashAbandoned(buildRecord(t, true).startedAt);
+    };
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('pageshow', onShow);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onShow);
+    };
+  }, []);
 
   // Rebuild when anything that changes the text changes.
   const configKey = JSON.stringify([
@@ -106,31 +201,15 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
   }, [configKey, restart]);
 
   const finish = useCallback(() => {
-    const { session, source } = testRef.current;
-    const s = settingsRef.current;
-    const d = drillRef.current;
-    const durationMs = session.elapsedMs(0);
-    const mode: ModeSpec = d ? { kind: 'drill', label: d.label, targets: d.targets } : s.mode;
-    const res = computeResult(session.words, session.typed, session.ks, durationMs, mode.kind === 'time');
-    const now = new Date();
-    const rec: SessionRecord = {
-      ...res,
-      startedAt: now.getTime() - durationMs,
-      dateKey: dateKey(now),
-      lang: s.lang,
-      mode,
-      punctuation: s.punctuation,
-      numbers: s.numbers,
-      noBackspace: s.noBackspace,
-      words: session.reachedWords(),
-      typed: [...session.typed],
-      ks: session.ks,
-      source,
-    };
+    const t = testRef.current;
+    if (t.recorded) return;
+    t.recorded = true;
+    if (t.quoteKey) localUsed.current.set(t.quoteKey, Date.now());
+    const rec = buildRecord(t, false);
     setResult(rec);
-    const typedKeys = session.ks.filter(isTyping).length;
-    if (durationMs >= 2000 && typedKeys >= 5) onSaved(rec);
-  }, [onSaved]);
+    const typedKeys = rec.ks.filter(isTyping).length;
+    if (rec.durationMs >= 2000 && typedKeys >= 5) onSavedRef.current(rec);
+  }, []);
 
   const apply = useCallback(
     (a: Action, t: number) => {
@@ -287,6 +366,7 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
           ) : (
             <span className="dim" style={{ fontSize: '0.9rem', fontFamily: 'var(--font-sans)' }}>
               {settings.lang === 'de' ? 'Deutsch' : 'English'} · {drill ? 'drill' : modeText(mode)}
+              {!drill && mode.kind === 'quote' && ` · ${freshText(quotePoolInfo(settings.lang, mode.length, allUsed()))}`}
               {settings.noBackspace ? ' · no backspace' : ''}
             </span>
           )}
@@ -312,6 +392,10 @@ export function TestView({ settings, update, sessions, drill, clearDrill, onSave
       </div>
     </div>
   );
+}
+
+function freshText({ total, fresh }: { total: number; fresh: number }): string {
+  return fresh > 0 ? `${fresh} of ${total} not typed yet` : `all ${total} typed, repeating the oldest`;
 }
 
 function modeText(m: ModeSpec): string {
@@ -435,6 +519,11 @@ function Words({ session, focused, onClick }: { session: TypingSession; focused:
                     {ch}
                   </span>
                 ))}
+              {session.gaps.has(i) && (
+                <span className="gap" title="typed instead of the space">
+                  {session.gaps.get(i)}
+                </span>
+              )}
             </span>
           );
         })}

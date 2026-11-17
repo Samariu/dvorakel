@@ -130,16 +130,28 @@ describe('input mapping (Windows AltGr = Ctrl+Alt)', () => {
 });
 
 describe('no-backspace mode', () => {
-  it('turns a letter typed instead of a space into one error and moves on', () => {
+  it('puts a letter typed instead of a space into the gap and starts the next word empty', () => {
     const s = new TypingSession(['the', 'cat'], { noBackspace: true });
-    typeAll(s, 'thecat');
+    typeAll(s, 'thexcat');
     expect(s.typed).toEqual(['the', 'cat']);
+    expect(s.gaps).toEqual(new Map([[0, 'x']]));
     expect(s.finished).toBe(true);
     const r = computeResult(s.words, s.typed, s.ks, s.elapsedMs(0), false);
-    expect(r.acc).toBeCloseTo((100 * 5) / 6, 1);
-    expect(r.chars).toEqual({ correct: 6, incorrect: 0, extra: 0, missed: 0 });
-    // The missing space is not credited: 6 chars in 500 ms.
-    expect(r.wpm).toBeCloseTo((6 / 5) * (60000 / 500), 1);
+    expect(r.acc).toBeCloseTo((100 * 6) / 7, 1);
+    expect(r.chars).toEqual({ correct: 6, incorrect: 1, extra: 0, missed: 0 });
+    // The missing space is not credited: 6 chars in 600 ms.
+    expect(r.wpm).toBeCloseTo((6 / 5) * (60000 / 600), 1);
+  });
+
+  it('a forgotten space shifts the rest of the next word', () => {
+    const s = new TypingSession(['the', 'cat', 'sat'], { noBackspace: true });
+    typeAll(s, 'thecat sat');
+    // 'c' fills the gap, so 'cat' is typed as 'at' + the space.
+    expect(s.gaps.get(0)).toBe('c');
+    expect(s.typed).toEqual(['the', 'at', 'sat']);
+    expect(s.finished).toBe(true);
+    const r = computeResult(s.words, s.typed, s.ks, s.elapsedMs(0), false);
+    expect(r.chars).toEqual({ correct: 6, incorrect: 3, extra: 0, missed: 1 });
   });
 
   it('ends on the last word once it is complete, even with a mistake', () => {
