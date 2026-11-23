@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { quoteUsage } from './content/generator';
 import { allSessions, flushAbandoned, saveSession } from './data/db';
-import { loadSettings, saveSettings, type Settings } from './data/settings';
+import { loadSettings, saveSettings, touchSettings, type Settings } from './data/settings';
+import { useSync } from './data/useSync';
 import { computeStreak, dateKey, type DayActivity } from './streak/streak';
 import type { DrillTarget, Lang, SessionRecord } from './types';
 import { TestView } from './ui/TestView';
@@ -43,13 +44,6 @@ export function App() {
   const [tab, setTab] = useState<Tab>('test');
   const [drill, setDrill] = useState<ActiveDrill | null>(null);
 
-  const update = useCallback((patch: Partial<Settings>) => {
-    setSettings((s) => {
-      const next = { ...s, ...patch };
-      saveSettings(next);
-      return next;
-    });
-  }, []);
 
   const reload = useCallback(() => {
     flushAbandoned()
@@ -66,6 +60,39 @@ export function App() {
 
   useEffect(reload, [reload]);
 
+  // Sync with the Pi (if configured): pulled sessions reload the list,
+  // newer settings from another browser replace ours.
+  const sync = useSync((o) => {
+    if (o.changed) reload();
+    if (o.settings) setSettings(o.settings);
+  });
+  const { run: syncRun, soon: syncSoon } = sync;
+  const syncedOnce = useRef(false);
+  useEffect(() => {
+    if (sessions !== null && !syncedOnce.current) {
+      syncedOnce.current = true;
+      syncRun();
+    }
+  }, [sessions, syncRun]);
+
+  const update = useCallback(
+    (patch: Partial<Settings>) => {
+      setSettings((s) => {
+        const next = { ...s, ...patch };
+        saveSettings(next);
+        return next;
+      });
+      touchSettings();
+      syncSoon();
+    },
+    [syncSoon],
+  );
+
+  const dataChanged = useCallback(() => {
+    reload();
+    syncRun();
+  }, [reload, syncRun]);
+
   useEffect(() => {
     const root = document.documentElement;
     if (settings.theme === 'system') delete root.dataset.theme;
@@ -76,11 +103,12 @@ export function App() {
     try {
       const id = await saveSession(rec);
       setSessions((s) => [...(s ?? []), { ...rec, id }]);
+      syncRun();
     } catch (e) {
       setLoadError(`Could not save the session: ${String(e)}`);
       setSessions((s) => [...(s ?? []), rec]);
     }
-  }, []);
+  }, [syncRun]);
 
   const completed = useMemo(() => (sessions ?? []).filter((s) => !s.abandoned), [sessions]);
   const usedQuotes = useMemo(() => quoteUsage(sessions ?? []), [sessions]);
@@ -149,12 +177,12 @@ export function App() {
           />
         )}
         {tab === 'practice' && <PracticeView settings={settings} update={update} sessions={sessions} onStart={startDrill} />}
-        {tab === 'stats' && <StatsView settings={settings} update={update} sessions={sessions ?? []} streak={streak} onChanged={reload} />}
-        {tab === 'settings' && <SettingsView settings={settings} update={update} onDataChanged={reload} />}
+        {tab === 'stats' && <StatsView settings={settings} update={update} sessions={sessions ?? []} streak={streak} onChanged={dataChanged} />}
+        {tab === 'settings' && <SettingsView settings={settings} update={update} onDataChanged={dataChanged} sync={sync} />}
       </main>
 
       <footer className="footer">
-        Dvorakel · data stays in this browser · word lists from OpenSubtitles frequencies (CC BY-SA 4.0), texts from Project
+        Dvorakel · data stays in your browser (and on your own sync server, if you set one up) · word lists from OpenSubtitles frequencies (CC BY-SA 4.0), texts from Project
         Gutenberg
       </footer>
     </div>

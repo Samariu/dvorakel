@@ -35,9 +35,12 @@ Dvorak variant, including custom layouts with ä/ö/ü/ß on an AltGr layer.
   Abandoned tests feed the weak-spot analysis, but not speed, accuracy, personal bests or the streak.
 - **Streak** (can be turned off): a daily goal in minutes or tests. Every 7 goal days in a row earns a freeze (max 2),
   which is used automatically when you miss a day. Changing the goal only applies from that day on.
-- **Your data stays in your browser** (IndexedDB). Nothing is sent anywhere, and every person or browser that opens
+- **Your data stays in your browser** (IndexedDB). Nothing is sent anywhere unless you set up your own sync server (below), and every person or browser that opens
   the app has their own separate history. Data is stored per address: `localhost:5173`, `localhost:4173` and the
   GitHub Pages URL each have their own. Settings has export/import to JSON for backups or moving to another machine.
+- **Sync between computers** (optional): run the small server in [`sync-server/`](sync-server/README.md) on a
+  Raspberry Pi (reached over Tailscale for HTTPS) and connect each browser in Settings → Sync. Tests from all computers
+  are merged, deletions and settings follow.
 - **Works offline**: after you have opened the Pages site once while online, the same link also loads without a
   connection (a small service worker caches the app). Online you always get the latest version.
 

@@ -2,12 +2,16 @@ import { useRef, useState, type ReactNode } from 'react';
 import { exportData, importData, resetData } from '../data/db';
 import { TYPING_SIZES, withGoal, type Settings, type Theme } from '../data/settings';
 import { POOL_SIZES } from '../content/generator';
+import { connectSync, disconnectSync } from '../data/sync';
+import type { SyncApi } from '../data/useSync';
+import { fmtDate } from './format';
 import { dateKey, FREEZE_EVERY, goalFor, MAX_FREEZES } from '../streak/streak';
 
 interface Props {
   settings: Settings;
   update: (p: Partial<Settings>) => void;
   onDataChanged: () => void;
+  sync: SyncApi;
 }
 
 function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -31,7 +35,7 @@ function Field({ title, desc, children }: { title: string; desc?: string; childr
   );
 }
 
-export function SettingsView({ settings, update, onDataChanged }: Props) {
+export function SettingsView({ settings, update, onDataChanged, sync }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const goal = goalFor(dateKey(new Date()), settings.goals);
@@ -57,7 +61,8 @@ export function SettingsView({ settings, update, onDataChanged }: Props) {
   const doImport = async (file: File) => {
     try {
       const json = JSON.parse(await file.text());
-      if (!confirm('Importing replaces all sessions in this browser with the ones in the file. Continue?')) return;
+      const where = sync.state.enabled ? 'in this browser and on every synced browser' : 'in this browser';
+      if (!confirm(`Importing replaces all sessions ${where} with the ones in the file. Continue?`)) return;
       const n = await importData(json);
       setMsg(`Imported ${n} sessions. Reloading settings…`);
       onDataChanged();
@@ -68,7 +73,8 @@ export function SettingsView({ settings, update, onDataChanged }: Props) {
   };
 
   const doReset = async () => {
-    if (!confirm('Delete ALL sessions and statistics in this browser? This cannot be undone. Export a backup first if unsure.')) return;
+    const where = sync.state.enabled ? 'in this browser AND on every browser synced with your Pi' : 'in this browser';
+    if (!confirm(`Delete ALL sessions and statistics ${where}? This cannot be undone. Export a backup first if unsure.`)) return;
     await resetData();
     onDataChanged();
     setMsg('All sessions deleted.');
@@ -165,11 +171,15 @@ export function SettingsView({ settings, update, onDataChanged }: Props) {
         </div>
       </section>
 
+      <SyncSection sync={sync} />
+
       <section className="card">
         <h3>Data</h3>
         <p className="notice" style={{ marginTop: 0 }}>
-          Everything is stored only in this browser (IndexedDB). Clearing site data deletes it, so export a backup now and then. A
-          backup also moves your history to another computer or browser.
+          {sync.state.enabled
+            ? 'Everything is stored in this browser (IndexedDB) and copied to your sync server. '
+            : 'Everything is stored only in this browser (IndexedDB). Clearing site data deletes it, so export a backup now and then. '}
+          A backup file also moves your history to another computer or browser.
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn" onClick={doExport}>
@@ -196,5 +206,113 @@ export function SettingsView({ settings, update, onDataChanged }: Props) {
         {msg && <p className="notice">{msg}</p>}
       </section>
     </div>
+  );
+}
+
+function SyncSection({ sync }: { sync: SyncApi }) {
+  const [url, setUrl] = useState('');
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const st = sync.state;
+
+  const connect = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await connectSync(url, token);
+      setToken('');
+      sync.run();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = () => {
+    if (!confirm('Stop syncing this browser? Your data stays here and on the Pi.')) return;
+    disconnectSync();
+    sync.run();
+  };
+
+  const inputStyle = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, padding: '6px 8px' };
+
+  return (
+    <section className="card">
+      <h3>Sync</h3>
+      <p className="notice" style={{ marginTop: 0 }}>
+        Keep history and settings the same on several computers through a small server on your Raspberry Pi. Setup:{' '}
+        <code>sync-server/README.md</code> in the repository.
+      </p>
+      {st.enabled ? (
+        <>
+          <Field title="Server" desc={st.url}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" onClick={sync.run} disabled={st.syncing}>
+                {st.syncing ? 'Syncing…' : 'Sync now'}
+              </button>
+              <button className="btn danger" onClick={disconnect}>
+                Disconnect
+              </button>
+            </div>
+          </Field>
+          <p className="notice" role="status">
+            {st.lastError ? (
+              <span style={{ color: 'var(--error)' }}>⚠ {st.lastError}</span>
+            ) : st.lastSyncAt ? (
+              <>
+                Last synced {fmtDate(st.lastSyncAt)}
+                {st.serverSessions !== undefined && ` · ${st.serverSessions.toLocaleString()} sessions on the server`}
+              </>
+            ) : (
+              'Not synced yet.'
+            )}
+          </p>
+        </>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void connect();
+          }}
+          style={{ display: 'grid', gap: 8 }}
+        >
+          <label>
+            <div>Server address</div>
+            <input
+              type="url"
+              required
+              placeholder="https://raspberrypi.your-tailnet.ts.net"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              style={inputStyle}
+              autoComplete="off"
+            />
+          </label>
+          <label>
+            <div>Token</div>
+            <input
+              type="password"
+              required
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              style={inputStyle}
+              autoComplete="off"
+            />
+          </label>
+          <div>
+            <button className="btn primary" type="submit" disabled={busy}>
+              {busy ? 'Connecting…' : 'Connect'}
+            </button>
+          </div>
+          {err && <p className="notice" style={{ color: 'var(--error)' }}>⚠ {err}</p>}
+          <p className="notice" style={{ margin: 0 }}>
+            On connecting, everything in this browser is uploaded and merged with what is already on the server. Nothing
+            is overwritten: tests from both computers are kept.
+          </p>
+        </form>
+      )}
+    </section>
   );
 }

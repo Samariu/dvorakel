@@ -53,7 +53,10 @@ export interface SessionResult {
 }
 
 export interface SessionRecord extends SessionResult {
+  /** Local IndexedDB key; differs between browsers. */
   id?: number;
+  /** Stable id across browsers (set when stored). */
+  uid?: string;
   startedAt: number;
   dateKey: string;
   lang: Lang;
