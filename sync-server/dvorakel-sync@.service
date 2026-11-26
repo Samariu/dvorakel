@@ -1,0 +1,18 @@
+# systemd unit for the Dvorakel sync server. The part after @ is the Linux user it runs as:
+#   sudo cp dvorakel-sync@.service /etc/systemd/system/
+#   sudo systemctl enable --now dvorakel-sync@$USER
+[Unit]
+Description=Dvorakel sync server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=%i
+ExecStart=/usr/bin/python3 /home/%i/dvorakel-sync/dvorakel_sync.py --db /home/%i/dvorakel-sync/data.sqlite3 --token-file /home/%i/dvorakel-sync/token
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

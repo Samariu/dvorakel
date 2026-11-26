@@ -1,19 +1,64 @@
 import Dexie, { type Table } from 'dexie';
 import type { Lang, SessionRecord } from '../types';
-import { loadSettings, saveSettings, type Settings } from './settings';
+import { loadSettings, saveSettings, touchSettings, type Settings } from './settings';
+import { syncEnabled } from './syncConfig';
+
+/** A change waiting to be sent to the sync server. */
+export interface OutboxEntry {
+  /** `s:<uid>` for a new session, `d:<uid>` for a deletion. */
+  key: string;
+  kind: 's' | 'd';
+  uid: string;
+}
 
 class DvorakelDB extends Dexie {
   sessions!: Table<SessionRecord, number>;
+  outbox!: Table<OutboxEntry, string>;
   constructor() {
     super('dvorakel');
     this.version(1).stores({ sessions: '++id, startedAt, lang, dateKey' });
+    this.version(2)
+      .stores({ sessions: '++id, startedAt, lang, dateKey, uid', outbox: '&key' })
+      .upgrade((tx) =>
+        tx
+          .table('sessions')
+          .toCollection()
+          .modify((s: SessionRecord) => {
+            if (!s.uid) s.uid = legacyUid(s);
+          }),
+      );
   }
 }
 
 export const db = new DvorakelDB();
 
+/**
+ * Id for sessions recorded before ids existed. Deterministic, so the same
+ * session copied to two browsers (export/import) is recognised as one.
+ */
+export function legacyUid(s: Pick<SessionRecord, 'startedAt' | 'lang' | 'ks'>): string {
+  return `l-${Math.round(s.startedAt)}-${s.lang}-${s.ks?.length ?? 0}`;
+}
+
+export function newUid(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+const outboxFor = (kind: 's' | 'd', uids: string[]): OutboxEntry[] => uids.map((uid) => ({ key: `${kind}:${uid}`, kind, uid }));
+
+/** Store new sessions and queue them for sync. Returns the local ids. */
+export async function addSessions(recs: SessionRecord[]): Promise<number[]> {
+  const withUid = recs.map(({ id: _id, ...r }) => ({ ...r, uid: r.uid ?? newUid() }) as SessionRecord);
+  return db.transaction('rw', db.sessions, db.outbox, async () => {
+    const ids = (await db.sessions.bulkAdd(withUid, { allKeys: true })) as number[];
+    if (syncEnabled()) await db.outbox.bulkPut(outboxFor('s', withUid.map((r) => r.uid!)));
+    return ids;
+  });
+}
+
 export async function saveSession(s: SessionRecord): Promise<number> {
-  return db.sessions.add(s);
+  return (await addSessions([s]))[0];
 }
 
 /**
@@ -53,7 +98,7 @@ export function unstashAbandoned(startedAt: number): void {
 export async function flushAbandoned(): Promise<void> {
   const pending = readPending();
   if (!pending.length) return;
-  await db.sessions.bulkAdd(pending.map(({ id: _id, ...rest }) => ({ ...rest, abandoned: true }) as SessionRecord));
+  await addSessions(pending.map((r) => ({ ...r, abandoned: true })));
   writePending([]);
 }
 
@@ -65,8 +110,25 @@ export async function sessionsFor(lang: Lang): Promise<SessionRecord[]> {
   return (await db.sessions.where('lang').equals(lang).toArray()).sort((a, b) => a.startedAt - b.startedAt);
 }
 
+async function deleteUids(uids: string[]) {
+  if (syncEnabled() && uids.length) await db.outbox.bulkPut(outboxFor('d', uids));
+}
+
 export async function deleteSession(id: number): Promise<void> {
-  await db.sessions.delete(id);
+  await db.transaction('rw', db.sessions, db.outbox, async () => {
+    const s = await db.sessions.get(id);
+    await db.sessions.delete(id);
+    if (s?.uid) {
+      await db.outbox.delete(`s:${s.uid}`);
+      await deleteUids([s.uid]);
+    }
+  });
+}
+
+/** Queue every local session for upload (when sync is switched on). */
+export async function queueAllForSync(): Promise<void> {
+  const uids = (await db.sessions.toArray()).map((s) => s.uid).filter((u): u is string => !!u);
+  await db.outbox.bulkPut(outboxFor('s', uids));
 }
 
 export interface ExportFile {
@@ -96,14 +158,27 @@ export async function importData(file: unknown): Promise<number> {
   const sessions = f.sessions.filter(
     (s) => s && typeof s.startedAt === 'number' && Array.isArray(s.ks) && Array.isArray(s.words) && (s.lang === 'en' || s.lang === 'de'),
   );
-  await db.transaction('rw', db.sessions, async () => {
+  const incoming = sessions.map((s) => ({ ...s, uid: s.uid ?? legacyUid(s) }));
+  const keep = new Set(incoming.map((s) => s.uid));
+  await db.transaction('rw', db.sessions, db.outbox, async () => {
+    // With sync on, "replace" means: sessions not in the file are deleted everywhere.
+    const gone = (await db.sessions.toArray()).map((s) => s.uid).filter((u): u is string => !!u && !keep.has(u));
     await db.sessions.clear();
-    await db.sessions.bulkAdd(sessions.map(({ id: _id, ...rest }) => rest as SessionRecord));
+    await deleteUids(gone);
+    await addSessions(incoming);
   });
-  if (f.settings) saveSettings({ ...loadSettings(), ...f.settings });
+  if (f.settings) {
+    saveSettings({ ...loadSettings(), ...f.settings });
+    touchSettings();
+  }
   return sessions.length;
 }
 
+/** Deletes every session (on all synced browsers too, if sync is on). */
 export async function resetData(): Promise<void> {
-  await db.sessions.clear();
+  await db.transaction('rw', db.sessions, db.outbox, async () => {
+    const uids = (await db.sessions.toArray()).map((s) => s.uid).filter((u): u is string => !!u);
+    await db.sessions.clear();
+    await deleteUids(uids);
+  });
 }

@@ -80,6 +80,32 @@ export function loadSettings(): Settings {
   return { ...DEFAULT_SETTINGS };
 }
 
+const TS_KEY = 'dvorakel.settingsUpdatedAt';
+
+/** When the settings were last changed in this browser (ms); 0 = never. Used for sync. */
+export function settingsUpdatedAt(): number {
+  try {
+    return Number(localStorage.getItem(TS_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function touchSettings(at = Date.now()): void {
+  try {
+    localStorage.setItem(TS_KEY, String(at));
+  } catch {
+    // Ignore.
+  }
+}
+
+/** Settings from another browser: replace ours, keep their timestamp. */
+export function applyRemoteSettings(value: Partial<Settings>, updatedAt: number): Settings {
+  saveSettings({ ...DEFAULT_SETTINGS, ...value } as Settings);
+  touchSettings(updatedAt);
+  return loadSettings();
+}
+
 export function saveSettings(s: Settings): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(s));
